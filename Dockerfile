@@ -3,7 +3,7 @@ FROM node:22-alpine AS builder
 WORKDIR /app
 
 COPY package.json ./
-RUN npm install --no-audit --no-fund
+RUN npm install --legacy-peer-deps --no-audit --no-fund --fetch-retries=5 --fetch-retry-mintimeout=20000 --fetch-retry-maxtimeout=120000
 
 COPY . .
 RUN npm run build
@@ -16,7 +16,7 @@ ENV NODE_ENV=production
 ENV PORT=3000
 
 COPY package.json ./
-RUN npm install --omit=dev --no-audit --no-fund
+RUN npm install --omit=dev --legacy-peer-deps --no-audit --no-fund --fetch-retries=5 --fetch-retry-mintimeout=20000 --fetch-retry-maxtimeout=120000
 
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/server.ts ./server.ts
