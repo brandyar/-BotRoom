@@ -1,6 +1,7 @@
 import type { FlowDefinition } from '../types/bot.ts';
+import { autoLayoutFlow } from '../utils/flowValidator.ts';
 
-export const DEFAULT_PERSIAN_FLOW: FlowDefinition = {
+const RAW_DEFAULT_FLOW: FlowDefinition = {
   startNodeId: 'node_start',
   fallbackText: 'متوجه پیام شما نشدم. لطفاً برای شروع مجدد عبارت /start را ارسال کنید یا از دکمه‌های زیر استفاده نمایید.',
   nodes: [
@@ -10,7 +11,6 @@ export const DEFAULT_PERSIAN_FLOW: FlowDefinition = {
       title: 'شروع گفتگو (/start)',
       triggerPattern: '/start',
       nextNodeId: 'node_welcome',
-      position: { x: 0, y: 0 },
     },
     {
       id: 'node_welcome',
@@ -21,7 +21,6 @@ export const DEFAULT_PERSIAN_FLOW: FlowDefinition = {
         { id: 'btn_order', text: 'ثبت درخواست مشاوره و سفارش', targetNodeId: 'node_ask_name' },
         { id: 'btn_hours', text: 'ساعات پاسخگویی و آدرس', targetNodeId: 'node_info' },
       ],
-      position: { x: 0, y: 140 },
     },
     {
       id: 'node_info',
@@ -31,7 +30,6 @@ export const DEFAULT_PERSIAN_FLOW: FlowDefinition = {
       inlineButtons: [
         { id: 'btn_back_start', text: 'شروع ثبت درخواست', targetNodeId: 'node_ask_name' },
       ],
-      position: { x: 280, y: 280 },
     },
     {
       id: 'node_ask_name',
@@ -43,19 +41,19 @@ export const DEFAULT_PERSIAN_FLOW: FlowDefinition = {
       inputType: 'text',
       validationErrorText: 'لطفاً نام معتبر (حداقل ۲ حرف) وارد کنید.',
       nextNodeId: 'node_ask_phone',
-      position: { x: -120, y: 280 },
     },
     {
       id: 'node_ask_phone',
       type: 'question',
       title: 'دریافت شماره موبایل',
-      messageText: 'سپاسگزارم {{form.full_name}}.\nلطفاً شماره موبایل خود را وارد کنید (مثلاً 09123456789):',
+      messageText: 'سپاسگزارم {{form.full_name}}.\nلطفاً شماره موبایل خود را وارد کنید یا روی دکمه ارسال شماره کلیک نمایید:',
       fieldKey: 'phone',
       fieldLabel: 'شماره تماس',
       inputType: 'phone',
+      requestContact: true,
+      requestContactButtonText: 'ارسال شماره موبایل من',
       validationErrorText: 'فرمت شماره موبایل صحیح نیست. لطفاً شماره ۱۱ رقمی با شروع 09 وارد کنید.',
       nextNodeId: 'node_ask_topic',
-      position: { x: -120, y: 420 },
     },
     {
       id: 'node_ask_topic',
@@ -66,11 +64,31 @@ export const DEFAULT_PERSIAN_FLOW: FlowDefinition = {
       fieldLabel: 'موضوع درخواست',
       inputType: 'choice',
       inlineButtons: [
-        { id: 'topic_sales', text: 'خرید و استعلام قیمت', targetNodeId: 'node_save' },
-        { id: 'topic_support', text: 'پشتیبانی فنی', targetNodeId: 'node_save' },
+        { id: 'topic_sales', text: 'خرید و استعلام قیمت', targetNodeId: 'node_tag_lead' },
+        { id: 'topic_support', text: 'پشتیبانی فنی', targetNodeId: 'node_tag_lead' },
+      ],
+      nextNodeId: 'node_tag_lead',
+    },
+    {
+      id: 'node_tag_lead',
+      type: 'tag_contact',
+      title: 'برچسب‌گذاری مشتری در CRM',
+      tagConfig: {
+        action: 'add',
+        tags: ['سرنخ جدید', 'ثبت فرم'],
+      },
+      nextNodeId: 'node_update_crm',
+    },
+    {
+      id: 'node_update_crm',
+      type: 'update_contact',
+      title: 'به‌روزرسانی پروفایل مشتری',
+      contactFieldMappings: [
+        { sessionKey: 'full_name', targetField: 'first_name' },
+        { sessionKey: 'phone', targetField: 'phone' },
+        { sessionKey: 'topic', targetField: 'custom', customKey: 'last_topic' },
       ],
       nextNodeId: 'node_save',
-      position: { x: -120, y: 560 },
     },
     {
       id: 'node_save',
@@ -78,7 +96,8 @@ export const DEFAULT_PERSIAN_FLOW: FlowDefinition = {
       title: 'ثبت نهایی در دایرکتوس',
       formTitle: 'فرم درخواست مشاوره',
       messageText: 'درخواست شما با موفقیت ثبت شد!\nنام: {{form.full_name}}\nتماس: {{form.phone}}\nموضوع: {{form.topic}}\nهمکاران ما به‌زودی با شما تماس می‌گیرند.',
-      position: { x: -120, y: 700 },
     },
   ],
 };
+
+export const DEFAULT_PERSIAN_FLOW: FlowDefinition = autoLayoutFlow(RAW_DEFAULT_FLOW);

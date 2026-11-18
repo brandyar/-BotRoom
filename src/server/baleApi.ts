@@ -1,4 +1,4 @@
-import type { BaleSendMessagePayload } from '../types/bot.ts';
+import type { BaleReplyMarkup, BaleSendMessagePayload } from '../types/bot.ts';
 
 const BALE_API_BASE = (process.env.BALE_API_BASE_URL || 'https://tapi.bale.ai').replace(/\/$/, '');
 
@@ -76,7 +76,121 @@ export async function sendBaleMessage(
   botToken: string,
   payload: BaleSendMessagePayload
 ) {
-  return callBaleMethod<{ message_id: number }>(botToken, 'sendMessage', payload as unknown as Record<string, unknown>);
+  return callBaleMethod<{ message_id: number }>(botToken, 'sendMessage', {
+    chat_id: payload.chat_id,
+    text: payload.text,
+    ...(payload.reply_markup ? { reply_markup: payload.reply_markup } : {}),
+    ...(payload.reply_to_message_id ? { reply_to_message_id: payload.reply_to_message_id } : {}),
+  });
+}
+
+export async function sendBalePhoto(
+  botToken: string,
+  payload: {
+    chat_id: number | string;
+    photo: string;
+    caption?: string;
+    reply_markup?: BaleReplyMarkup;
+  }
+) {
+  return callBaleMethod<{ message_id: number }>(botToken, 'sendPhoto', {
+    chat_id: payload.chat_id,
+    photo: payload.photo,
+    ...(payload.caption ? { caption: payload.caption } : {}),
+    ...(payload.reply_markup ? { reply_markup: payload.reply_markup } : {}),
+  });
+}
+
+export async function editBaleMessageText(
+  botToken: string,
+  payload: {
+    chat_id: number | string;
+    message_id: number;
+    text: string;
+    reply_markup?: BaleReplyMarkup;
+  }
+) {
+  return callBaleMethod<{ message_id: number } | boolean>(botToken, 'editMessageText', {
+    chat_id: payload.chat_id,
+    message_id: payload.message_id,
+    text: payload.text,
+    ...(payload.reply_markup ? { reply_markup: payload.reply_markup } : {}),
+  });
+}
+
+export async function editBaleMessageCaption(
+  botToken: string,
+  payload: {
+    chat_id: number | string;
+    message_id: number;
+    caption: string;
+    reply_markup?: BaleReplyMarkup;
+  }
+) {
+  return callBaleMethod<{ message_id: number } | boolean>(botToken, 'editMessageCaption', {
+    chat_id: payload.chat_id,
+    message_id: payload.message_id,
+    caption: payload.caption,
+    ...(payload.reply_markup ? { reply_markup: payload.reply_markup } : {}),
+  });
+}
+
+export async function editBaleMessageReplyMarkup(
+  botToken: string,
+  payload: {
+    chat_id: number | string;
+    message_id: number;
+    reply_markup?: BaleReplyMarkup;
+  }
+) {
+  return callBaleMethod<{ message_id: number } | boolean>(botToken, 'editMessageReplyMarkup', {
+    chat_id: payload.chat_id,
+    message_id: payload.message_id,
+    ...(payload.reply_markup ? { reply_markup: payload.reply_markup } : {}),
+  });
+}
+
+export async function dispatchBaleOutgoingPayload(
+  botToken: string,
+  payload: BaleSendMessagePayload
+) {
+  if (payload.is_edit && payload.edit_message_id) {
+    if (payload.photo_url && payload.has_source_photo) {
+      const res = await editBaleMessageCaption(botToken, {
+        chat_id: payload.chat_id,
+        message_id: payload.edit_message_id,
+        caption: payload.text,
+        reply_markup: payload.reply_markup,
+      });
+      if (res.ok) return res;
+    } else if (!payload.photo_url && !payload.has_source_photo) {
+      const res = await editBaleMessageText(botToken, {
+        chat_id: payload.chat_id,
+        message_id: payload.edit_message_id,
+        text: payload.text,
+        reply_markup: payload.reply_markup,
+      });
+      if (res.ok) return res;
+    }
+  }
+
+  if (payload.photo_url) {
+    const photoRes = await sendBalePhoto(botToken, {
+      chat_id: payload.chat_id,
+      photo: payload.photo_url,
+      caption: payload.text,
+      reply_markup: payload.reply_markup,
+    });
+    if (photoRes.ok) return photoRes;
+    // Fallback to sendMessage if Bale could not fetch external photo_url
+    return sendBaleMessage(botToken, {
+      chat_id: payload.chat_id,
+      text: payload.text,
+      reply_markup: payload.reply_markup,
+    });
+  }
+
+  return sendBaleMessage(botToken, payload);
 }
 
 export async function answerBaleCallbackQuery(

@@ -1,29 +1,59 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Activity,
+  BarChart3,
   Bot,
+  CalendarCheck,
   Database,
   FileSpreadsheet,
   LogOut,
+  Megaphone,
+  ShoppingBag,
+  Users,
   Workflow,
 } from 'lucide-react';
 import { AuthScreen } from './components/AuthScreen.tsx';
+import { BookingView } from './components/BookingView.tsx';
 import { BotsOverviewView } from './components/BotsOverviewView.tsx';
+import { BroadcastView } from './components/BroadcastView.tsx';
+import { CatalogOrdersView } from './components/CatalogOrdersView.tsx';
 import { CollectedFormsView } from './components/CollectedFormsView.tsx';
+import { ContactsView } from './components/ContactsView.tsx';
 import { DirectusSchemaView } from './components/DirectusSchemaView.tsx';
 import { FlowBuilderView } from './components/FlowBuilderView.tsx';
+import { SurveysView } from './components/SurveysView.tsx';
 import { WebhookLogsView } from './components/WebhookLogsView.tsx';
 import { api, ApiError, type AuthResponse, type HealthResponse } from './lib/api.ts';
 import type {
+  AppointmentRecord,
+  BookingScheduleRecord,
+  BookingServiceRecord,
+  BotContactRecord,
+  BotFlowRecord,
+  BotOrderRecord,
   BotRecord,
   BotSessionRecord,
+  BroadcastCampaignRecord,
   CollectedFormRecord,
   DirectusUser,
   FlowDefinition,
+  ProductRecord,
+  SurveyRecord,
+  SurveyResponseRecord,
   WebhookLogRecord,
 } from './types/bot.ts';
 
-type NavTab = 'bots' | 'flow' | 'forms' | 'logs' | 'schema';
+type NavTab =
+  | 'bots'
+  | 'flow'
+  | 'contacts'
+  | 'booking'
+  | 'catalog'
+  | 'broadcast'
+  | 'surveys'
+  | 'forms'
+  | 'logs'
+  | 'schema';
 
 const AUTH_STORAGE_KEY = 'balesaz_directus_session';
 
@@ -50,6 +80,11 @@ const EMPTY_FLOW: FlowDefinition = {
 const TAB_TITLES: Record<NavTab, string> = {
   bots: 'بازوها و اتصال وب‌هوک',
   flow: 'طراح جریان گفتگو',
+  contacts: 'مشتریان و مخاطبین بله (CRM)',
+  booking: 'رزرو و نوبت‌دهی شمسی',
+  catalog: 'کاتالوگ محصولات و سفارش‌ها',
+  broadcast: 'ارسال پیام گروهی (کمپین‌ها)',
+  surveys: 'نظرسنجی‌ها و تحلیل رضایت',
   forms: 'داده‌های فرم‌های جمع‌آوری‌شده',
   logs: 'گزارش وب‌هوک‌ها و نشست‌ها',
   schema: 'راهنمای دیتابیس دایرکتوس',
@@ -70,9 +105,24 @@ export default function App() {
 
   const [flowId, setFlowId] = useState<string | null>(null);
   const [flowName, setFlowName] = useState('جریان اصلی گفتگو');
+  const [flows, setFlows] = useState<BotFlowRecord[]>([]);
   const [flow, setFlow] = useState<FlowDefinition>(EMPTY_FLOW);
   const [savingFlow, setSavingFlow] = useState(false);
 
+  const [contacts, setContacts] = useState<BotContactRecord[]>([]);
+  const [contactsError, setContactsError] = useState<string | null>(null);
+  const [products, setProducts] = useState<ProductRecord[]>([]);
+  const [orders, setOrders] = useState<BotOrderRecord[]>([]);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
+  const [surveys, setSurveys] = useState<SurveyRecord[]>([]);
+  const [surveyResponses, setSurveyResponses] = useState<SurveyResponseRecord[]>([]);
+  const [surveysError, setSurveysError] = useState<string | null>(null);
+  const [bookingServices, setBookingServices] = useState<BookingServiceRecord[]>([]);
+  const [bookingSchedules, setBookingSchedules] = useState<BookingScheduleRecord[]>([]);
+  const [appointments, setAppointments] = useState<AppointmentRecord[]>([]);
+  const [bookingError, setBookingError] = useState<string | null>(null);
+  const [campaigns, setCampaigns] = useState<BroadcastCampaignRecord[]>([]);
+  const [broadcastError, setBroadcastError] = useState<string | null>(null);
   const [forms, setForms] = useState<CollectedFormRecord[]>([]);
   const [logs, setLogs] = useState<WebhookLogRecord[]>([]);
   const [sessions, setSessions] = useState<BotSessionRecord[]>([]);
@@ -177,18 +227,116 @@ export default function App() {
   const loadSelectedBotDetails = useCallback(async () => {
     if (!token || !selectedBotId) return;
     setLoadingBotData(true);
+    setContactsError(null);
+    setCatalogError(null);
+    setSurveysError(null);
+    setBookingError(null);
+    setBroadcastError(null);
     try {
-      const [flowRes, formsRes, logsRes, sessionsRes] = await Promise.all([
+      const [
+        flowRes,
+        formsRes,
+        logsRes,
+        sessionsRes,
+        contactsRes,
+        productsRes,
+        ordersRes,
+        surveysRes,
+        surveyResponsesRes,
+        bookingServicesRes,
+        bookingSchedulesRes,
+        appointmentsRes,
+        campaignsRes,
+      ] = await Promise.all([
         api.getBotFlow(token, selectedBotId),
         api.listForms(token, selectedBotId),
         api.listLogs(token, selectedBotId),
         api.listSessions(token, selectedBotId),
+        api.listContacts(token, selectedBotId).catch((err) => {
+          setContactsError(
+            err instanceof ApiError
+              ? err.message
+              : 'کالکشن bot_contacts هنوز در دایرکتوس ساخته نشده یا دسترسی آن تنظیم نشده است.'
+          );
+          return { contacts: [] as BotContactRecord[] };
+        }),
+        api.listProducts(token, selectedBotId).catch((err) => {
+          setCatalogError(
+            err instanceof ApiError
+              ? err.message
+              : 'کالکشن‌های products یا bot_orders هنوز در دایرکتوس ساخته نشده یا دسترسی آن‌ها تنظیم نشده است.'
+          );
+          return { products: [] as ProductRecord[] };
+        }),
+        api.listOrders(token, selectedBotId).catch((err) => {
+          setCatalogError((prev) =>
+            prev ||
+            (err instanceof ApiError
+              ? err.message
+              : 'کالکشن‌های products یا bot_orders هنوز در دایرکتوس ساخته نشده یا دسترسی آن‌ها تنظیم نشده است.')
+          );
+          return { orders: [] as BotOrderRecord[] };
+        }),
+        api.listSurveys(token, selectedBotId).catch((err) => {
+          setSurveysError(
+            err instanceof ApiError
+              ? err.message
+              : 'کالکشن‌های surveys یا survey_responses هنوز در دایرکتوس ساخته نشده یا دسترسی آن‌ها تنظیم نشده است.'
+          );
+          return { surveys: [] as SurveyRecord[] };
+        }),
+        api.listSurveyResponses(token, selectedBotId).catch((err) => {
+          setSurveysError((prev) =>
+            prev ||
+            (err instanceof ApiError
+              ? err.message
+              : 'کالکشن‌های surveys یا survey_responses هنوز در دایرکتوس ساخته نشده یا دسترسی آن‌ها تنظیم نشده است.')
+          );
+          return { responses: [] as SurveyResponseRecord[] };
+        }),
+        api.listBookingServices(token, selectedBotId).catch((err) => {
+          setBookingError(
+            err instanceof ApiError
+              ? err.message
+              : 'کالکشن‌های نوبت‌دهی (booking_services / booking_schedules / appointments) هنوز در دایرکتوس ساخته نشده‌اند.'
+          );
+          return { services: [] as BookingServiceRecord[] };
+        }),
+        api.listBookingSchedules(token, selectedBotId).catch((err) => {
+          setBookingError((prev) =>
+            prev ||
+            (err instanceof ApiError
+              ? err.message
+              : 'کالکشن‌های نوبت‌دهی هنوز در دایرکتوس ساخته نشده‌اند.')
+          );
+          return { schedules: [] as BookingScheduleRecord[] };
+        }),
+        api.listAppointments(token, selectedBotId).catch((err) => {
+          setBookingError((prev) =>
+            prev ||
+            (err instanceof ApiError
+              ? err.message
+              : 'کالکشن appointments هنوز در دایرکتوس ساخته نشده یا دسترسی آن تنظیم نشده است.')
+          );
+          return { appointments: [] as AppointmentRecord[] };
+        }),
+        api.listCampaigns(token, selectedBotId).catch((err) => {
+          setBroadcastError(
+            err instanceof ApiError
+              ? err.message
+              : 'کالکشن broadcast_campaigns هنوز در دایرکتوس ساخته نشده یا دسترسی آن تنظیم نشده است.'
+          );
+          return { campaigns: [] as BroadcastCampaignRecord[] };
+        }),
       ]);
 
-      if (flowRes.flow) {
-        setFlowId(flowRes.flow.id);
-        setFlowName(flowRes.flow.name);
-        setFlow(flowRes.flow.flow_json);
+      setFlows(flowRes.flows || []);
+      const preferredFlow =
+        flowRes.flows?.find((f) => f.is_published) || flowRes.flow || flowRes.flows?.[0] || null;
+      if (preferredFlow) {
+        setFlowId(preferredFlow.id);
+        setFlowName(preferredFlow.name);
+        setFlow(preferredFlow.flow_json);
       } else {
         setFlowId(null);
         const def = await api.getDefaultFlow().catch(() => null);
@@ -198,6 +346,15 @@ export default function App() {
       setForms(formsRes.forms);
       setLogs(logsRes.logs);
       setSessions(sessionsRes.sessions);
+      setContacts(contactsRes.contacts);
+      setProducts(productsRes.products);
+      setOrders(ordersRes.orders);
+      setSurveys(surveysRes.surveys);
+      setSurveyResponses(surveyResponsesRes.responses);
+      setBookingServices(bookingServicesRes.services);
+      setBookingSchedules(bookingSchedulesRes.schedules);
+      setAppointments(appointmentsRes.appointments);
+      setCampaigns(campaignsRes.campaigns);
     } catch (err) {
       showToast('error', err instanceof ApiError ? err.message : 'خطا در دریافت اطلاعات بازو');
     } finally {
@@ -240,11 +397,26 @@ export default function App() {
     setRefreshToken(null);
     setUser(null);
     setBots([]);
+    setFlows([]);
+    setContacts([]);
+    setContactsError(null);
+    setProducts([]);
+    setOrders([]);
+    setCatalogError(null);
+    setSurveys([]);
+    setSurveyResponses([]);
+    setSurveysError(null);
+    setBookingServices([]);
+    setBookingSchedules([]);
+    setAppointments([]);
+    setBookingError(null);
+    setCampaigns([]);
+    setBroadcastError(null);
     setSelectedBotId(null);
     setPreviewMode(false);
   }
 
-  async function handleSaveFlow() {
+  async function handleSaveFlow(options?: { saveAsNewVersion?: boolean }) {
     if (!token || !selectedBotId) return;
     setSavingFlow(true);
     try {
@@ -253,11 +425,41 @@ export default function App() {
         name: flowName,
         flow_json: flow,
         is_published: true,
+        saveAsNewVersion: Boolean(options?.saveAsNewVersion),
       });
       setFlowId(res.flow.id);
-      showToast('success', 'جریان گفتگو با موفقیت در دایرکتوس ذخیره و منتشر شد.');
+      if (res.flows) setFlows(res.flows);
+      showToast(
+        'success',
+        options?.saveAsNewVersion
+          ? `نسخه جدید (${res.flow.version}) با موفقیت ذخیره و منتشر شد.`
+          : 'جریان گفتگو با موفقیت در دایرکتوس ذخیره و منتشر شد.'
+      );
     } catch (err) {
       showToast('error', err instanceof ApiError ? err.message : 'ذخیره جریان ناموفق بود.');
+    } finally {
+      setSavingFlow(false);
+    }
+  }
+
+  function handleSelectFlowVersion(flowRecord: BotFlowRecord) {
+    setFlowId(flowRecord.id);
+    setFlowName(flowRecord.name);
+    setFlow(flowRecord.flow_json);
+  }
+
+  async function handlePublishFlowVersion(targetFlowId: string) {
+    if (!token || !selectedBotId) return;
+    setSavingFlow(true);
+    try {
+      const res = await api.publishBotFlowVersion(token, selectedBotId, targetFlowId);
+      setFlowId(res.flow.id);
+      setFlowName(res.flow.name);
+      setFlow(res.flow.flow_json);
+      if (res.flows) setFlows(res.flows);
+      showToast('success', `نسخه ${res.flow.version} به‌عنوان نسخه فعال منتشر شد.`);
+    } catch (err) {
+      showToast('error', err instanceof ApiError ? err.message : 'انتشار نسخه ناموفق بود.');
     } finally {
       setSavingFlow(false);
     }
@@ -287,6 +489,11 @@ export default function App() {
   const navItems: Array<{ id: NavTab; label: string; icon: React.ReactNode }> = [
     { id: 'bots', label: 'بازوها و وب‌هوک', icon: <Bot className="w-4 h-4" /> },
     { id: 'flow', label: 'طراح جریان گفتگو', icon: <Workflow className="w-4 h-4" /> },
+    { id: 'contacts', label: 'مشتریان و مخاطبین', icon: <Users className="w-4 h-4" /> },
+    { id: 'booking', label: 'رزرو و نوبت‌دهی', icon: <CalendarCheck className="w-4 h-4" /> },
+    { id: 'catalog', label: 'کاتالوگ و سفارش‌ها', icon: <ShoppingBag className="w-4 h-4" /> },
+    { id: 'broadcast', label: 'ارسال پیام گروهی', icon: <Megaphone className="w-4 h-4" /> },
+    { id: 'surveys', label: 'نظرسنجی و آمار', icon: <BarChart3 className="w-4 h-4" /> },
     { id: 'forms', label: 'داده‌های فرم‌ها', icon: <FileSpreadsheet className="w-4 h-4" /> },
     { id: 'logs', label: 'گزارش وب‌هوک‌ها', icon: <Activity className="w-4 h-4" /> },
     { id: 'schema', label: 'راهنمای دایرکتوس', icon: <Database className="w-4 h-4" /> },
@@ -407,7 +614,11 @@ export default function App() {
           </div>
         </header>
 
-        <main className="flex-1 p-6 max-w-7xl w-full mx-auto">
+        <main
+          className={`flex-1 p-6 w-full mx-auto ${
+            activeTab === 'flow' ? 'max-w-[1600px]' : 'max-w-7xl'
+          }`}
+        >
           {toast && (
             <div
               className={`mb-5 p-3.5 rounded-xl border text-xs ${
@@ -441,11 +652,148 @@ export default function App() {
               botId={selectedBotId}
               flowId={flowId}
               flowName={flowName}
+              flows={flows}
               flow={flow}
+              products={products}
+              surveys={surveys}
+              bookingServices={bookingServices}
+              bookingSchedules={bookingSchedules}
+              appointments={appointments}
               saving={savingFlow}
               onChangeFlow={setFlow}
               onSaveFlow={handleSaveFlow}
+              onSelectFlowVersion={handleSelectFlowVersion}
+              onPublishVersion={handlePublishFlowVersion}
             />
+          )}
+
+          {activeTab === 'contacts' && (
+            <div className="space-y-4">
+              {contactsError && (
+                <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 flex flex-wrap items-center justify-between gap-3">
+                  <span>{contactsError}</span>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('schema')}
+                    className="px-3 py-1.5 bg-white border border-amber-300 rounded-lg text-amber-900 font-medium hover:bg-amber-100/60 cursor-pointer"
+                  >
+                    مشاهده راهنمای ساخت کالکشن
+                  </button>
+                </div>
+              )}
+              <ContactsView
+                token={token}
+                botId={selectedBotId}
+                contacts={contacts}
+                loading={loadingBotData}
+                onRefresh={loadSelectedBotDetails}
+              />
+            </div>
+          )}
+
+          {activeTab === 'booking' && (
+            <div className="space-y-4">
+              {bookingError && (
+                <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 flex flex-wrap items-center justify-between gap-3">
+                  <span>{bookingError}</span>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('schema')}
+                    className="px-3 py-1.5 bg-white border border-amber-300 rounded-lg text-amber-900 font-medium hover:bg-amber-100/60 cursor-pointer"
+                  >
+                    مشاهده راهنمای ساخت کالکشن‌های فاز ۴
+                  </button>
+                </div>
+              )}
+              <BookingView
+                token={token}
+                botId={selectedBotId}
+                services={bookingServices}
+                schedules={bookingSchedules}
+                appointments={appointments}
+                loading={loadingBotData}
+                onRefresh={loadSelectedBotDetails}
+                onPreviewServicesChange={!token ? setBookingServices : undefined}
+                onPreviewSchedulesChange={!token ? setBookingSchedules : undefined}
+              />
+            </div>
+          )}
+
+          {activeTab === 'catalog' && (
+            <div className="space-y-4">
+              {catalogError && (
+                <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 flex flex-wrap items-center justify-between gap-3">
+                  <span>{catalogError}</span>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('schema')}
+                    className="px-3 py-1.5 bg-white border border-amber-300 rounded-lg text-amber-900 font-medium hover:bg-amber-100/60 cursor-pointer"
+                  >
+                    مشاهده راهنمای ساخت کالکشن‌های فاز ۳
+                  </button>
+                </div>
+              )}
+              <CatalogOrdersView
+                token={token}
+                botId={selectedBotId}
+                products={products}
+                orders={orders}
+                loading={loadingBotData}
+                onRefresh={loadSelectedBotDetails}
+                onPreviewProductsChange={!token ? setProducts : undefined}
+              />
+            </div>
+          )}
+
+          {activeTab === 'broadcast' && (
+            <div className="space-y-4">
+              {broadcastError && (
+                <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 flex flex-wrap items-center justify-between gap-3">
+                  <span>{broadcastError}</span>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('schema')}
+                    className="px-3 py-1.5 bg-white border border-amber-300 rounded-lg text-amber-900 font-medium hover:bg-amber-100/60 cursor-pointer"
+                  >
+                    مشاهده راهنمای ساخت کالکشن‌های فاز ۴
+                  </button>
+                </div>
+              )}
+              <BroadcastView
+                token={token}
+                botId={selectedBotId}
+                contacts={contacts}
+                campaigns={campaigns}
+                loading={loadingBotData}
+                onRefresh={loadSelectedBotDetails}
+              />
+            </div>
+          )}
+
+          {activeTab === 'surveys' && (
+            <div className="space-y-4">
+              {surveysError && (
+                <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 flex flex-wrap items-center justify-between gap-3">
+                  <span>{surveysError}</span>
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab('schema')}
+                    className="px-3 py-1.5 bg-white border border-amber-300 rounded-lg text-amber-900 font-medium hover:bg-amber-100/60 cursor-pointer"
+                  >
+                    مشاهده راهنمای ساخت کالکشن‌های فاز ۳
+                  </button>
+                </div>
+              )}
+              <SurveysView
+                token={token}
+                botId={selectedBotId}
+                surveys={surveys}
+                responses={surveyResponses}
+                loading={loadingBotData}
+                onRefresh={loadSelectedBotDetails}
+                onPreviewSurveysChange={!token ? setSurveys : undefined}
+              />
+            </div>
           )}
 
           {activeTab === 'forms' && (
