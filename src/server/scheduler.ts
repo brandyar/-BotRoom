@@ -3,7 +3,7 @@ import { dispatchBaleOutgoingPayload, sendBaleMessage } from './baleApi.ts';
 import {
   getBotAsAdmin,
   getCampaignAsAdmin,
-  getDirectusConfig,
+  getBackendConfig,
   listBookingServicesAsAdmin,
   listBotContactsAsAdmin,
   listDueReminderAppointmentsAsAdmin,
@@ -11,7 +11,7 @@ import {
   markContactBlockedAsAdmin,
   updateAppointmentAsAdmin,
   updateCampaignAsAdmin,
-} from './directus.ts';
+} from './backend.ts';
 
 const activeCampaignIds = new Set<string>();
 let reminderSweepRunning = false;
@@ -49,7 +49,7 @@ export async function runAppointmentReminderSweep(botId?: string): Promise<{
   sent: number;
   failed: number;
 }> {
-  const cfg = getDirectusConfig();
+  const cfg = getBackendConfig();
   if (!cfg.isConfigured || !cfg.hasAdminToken) {
     return { checked: 0, sent: 0, failed: 0 };
   }
@@ -226,7 +226,7 @@ export async function executeBroadcastCampaign(
 }
 
 export async function runDueScheduledCampaigns(): Promise<number> {
-  const cfg = getDirectusConfig();
+  const cfg = getBackendConfig();
   if (!cfg.isConfigured || !cfg.hasAdminToken) return 0;
 
   try {

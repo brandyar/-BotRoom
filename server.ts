@@ -28,11 +28,11 @@ import {
   deleteUserBot,
   deleteUserProduct,
   deleteUserSurvey,
-  DirectusApiError,
-  DirectusConfigError,
+  BackendApiError,
+  BackendConfigError,
   getCampaignAsAdmin,
-  getCurrentDirectusUser,
-  getDirectusConfig,
+  getCurrentBackendUser,
+  getBackendConfig,
   getUserBot,
   listAppointments,
   listAppointmentsAsAdmin,
@@ -52,10 +52,10 @@ import {
   listUserBots,
   listUserProducts,
   listWebhookLogs,
-  loginWithDirectus,
-  logoutDirectus,
-  refreshDirectusToken,
-  registerUserInDirectus,
+  loginWithBackend,
+  logoutBackend,
+  refreshBackendToken,
+  registerUserInBackend,
   updateAppointment,
   updateBookingSchedule,
   updateBookingService,
@@ -67,7 +67,7 @@ import {
   updateUserBot,
   updateUserProduct,
   updateUserSurvey,
-} from './src/server/directus.ts';
+} from './src/server/backend.ts';
 import { executeBotFlow } from './src/server/flowEngine.ts';
 import {
   executeBroadcastCampaign,
@@ -81,13 +81,14 @@ import type {
   BaleUpdate,
   BookingScheduleRecord,
   BookingServiceRecord,
+  BroadcastCampaignStatus,
   FlowDefinition,
   ProductRecord,
   SurveyRecord,
 } from './src/types/bot.ts';
 
 interface AuthedRequest extends Request {
-  directusToken?: string;
+  authToken?: string;
 }
 
 function requireBearerToken(req: AuthedRequest, res: Response, next: NextFunction) {
@@ -96,26 +97,26 @@ function requireBearerToken(req: AuthedRequest, res: Response, next: NextFunctio
     res.status(401).json({ error: 'لطفاً ابتدا وارد حساب کاربری خود شوید.' });
     return;
   }
-  req.directusToken = header.slice('Bearer '.length).trim();
+  req.authToken = header.slice('Bearer '.length).trim();
   next();
 }
 
 function handleApiError(res: Response, error: unknown) {
-  if (error instanceof DirectusConfigError) {
+  if (error instanceof BackendConfigError) {
     res.status(500).json({
-      code: 'DIRECTUS_NOT_CONFIGURED',
+      code: 'BACKEND_NOT_CONFIGURED',
       upstreamStatus: 503,
       error: error.message,
     });
     return;
   }
-  if (error instanceof DirectusApiError) {
+  if (error instanceof BackendApiError) {
     const safeStatus =
       error.status === 403 || error.status === 502 || error.status === 503 || error.status === 504
         ? 422
         : error.status;
     res.status(safeStatus).json({
-      code: error.code || 'DIRECTUS_API_ERROR',
+      code: error.code || 'BACKEND_API_ERROR',
       upstreamStatus: error.status,
       error: error.message,
     });
@@ -124,6 +125,32 @@ function handleApiError(res: Response, error: unknown) {
   const message = error instanceof Error ? error.message : 'خطای داخلی سرور رخ داد.';
   console.error('Server API Error:', error);
   res.status(500).json({ error: message });
+}
+
+function pickAllowedFields<T extends object = Record<string, unknown>>(
+  body: unknown,
+  allowedKeys: readonly string[]
+): Partial<T> {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    return {};
+  }
+  const source = body as Record<string, unknown>;
+  const result: Record<string, unknown> = {};
+  for (const key of allowedKeys) {
+    if (key in source && source[key] !== undefined) {
+      result[key] = source[key];
+    }
+  }
+  return result as Partial<T>;
+}
+
+function parseTimeToMinutes(hhmm: string): number | null {
+  const match = String(hhmm || '').trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return null;
+  const h = Number(match[1]);
+  const m = Number(match[2]);
+  if (h < 0 || h > 23 || m < 0 || m > 59) return null;
+  return h * 60 + m;
 }
 
 function resolvePublicBaseUrl(req: Request): string {
@@ -142,6 +169,13 @@ async function startServer() {
 
   app.set('trust proxy', 1);
   app.use(express.json({ limit: '2mb' }));
+  app.use((err: unknown, _req: Request, res: Response, next: NextFunction) => {
+    if (err instanceof SyntaxError && 'body' in err) {
+      res.status(400).json({ error: 'ساختار JSON ارسالی نامعتبر است.' });
+      return;
+    }
+    next(err);
+  });
 
   // Start Redis background worker & Phase 4 schedulers (reminders + scheduled broadcasts)
   startWebhookWorker();
@@ -149,10 +183,10 @@ async function startServer() {
 
   // ---------------- System & Config ----------------
   app.get('/api/health', (_req, res) => {
-    const cfg = getDirectusConfig();
+    const cfg = getBackendConfig();
     res.json({
       ok: true,
-      directusConfigured: cfg.isConfigured,
+      backendConfigured: cfg.isConfigured,
       hasAdminToken: cfg.hasAdminToken,
       redisConfigured: Boolean((process.env.REDIS_URL || '').trim()),
     });
@@ -162,7 +196,7 @@ async function startServer() {
     res.json({ flow: DEFAULT_PERSIAN_FLOW });
   });
 
-  // ---------------- Directus Authentication ----------------
+  // ---------------- User Authentication ----------------
   app.post('/api/auth/login', async (req, res) => {
     try {
       const { email, password } = req.body as { email?: string; password?: string };
@@ -171,8 +205,8 @@ async function startServer() {
         return;
       }
 
-      const tokens = await loginWithDirectus(email.trim(), password);
-      const user = await getCurrentDirectusUser(tokens.access_token);
+      const tokens = await loginWithBackend(email.trim(), password);
+      const user = await getCurrentBackendUser(tokens.access_token);
       res.json({
         access_token: tokens.access_token,
         refresh_token: tokens.refresh_token,
@@ -201,15 +235,15 @@ async function startServer() {
         return;
       }
 
-      await registerUserInDirectus({
+      await registerUserInBackend({
         email: email.trim(),
         password,
         firstName: firstName.trim(),
         lastName: lastName?.trim(),
       });
 
-      const tokens = await loginWithDirectus(email.trim(), password);
-      const user = await getCurrentDirectusUser(tokens.access_token);
+      const tokens = await loginWithBackend(email.trim(), password);
+      const user = await getCurrentBackendUser(tokens.access_token);
       res.status(201).json({
         access_token: tokens.access_token,
         refresh_token: tokens.refresh_token,
@@ -228,7 +262,7 @@ async function startServer() {
         res.status(400).json({ error: 'Refresh token missing' });
         return;
       }
-      const tokens = await refreshDirectusToken(refresh_token);
+      const tokens = await refreshBackendToken(refresh_token);
       res.json(tokens);
     } catch (error) {
       handleApiError(res, error);
@@ -239,7 +273,7 @@ async function startServer() {
     try {
       const { refresh_token } = req.body as { refresh_token?: string };
       if (refresh_token) {
-        await logoutDirectus(refresh_token).catch(() => undefined);
+        await logoutBackend(refresh_token).catch(() => undefined);
       }
       res.json({ ok: true });
     } catch (error) {
@@ -249,7 +283,7 @@ async function startServer() {
 
   app.get('/api/auth/me', requireBearerToken, async (req: AuthedRequest, res) => {
     try {
-      const user = await getCurrentDirectusUser(req.directusToken!);
+      const user = await getCurrentBackendUser(req.authToken!);
       res.json({ user });
     } catch (error) {
       handleApiError(res, error);
@@ -259,7 +293,7 @@ async function startServer() {
   // ---------------- Bots CRUD & Bale Webhook Setup ----------------
   app.get('/api/bots', requireBearerToken, async (req: AuthedRequest, res) => {
     try {
-      const bots = await listUserBots(req.directusToken!);
+      const bots = await listUserBots(req.authToken!);
       res.json({ bots });
     } catch (error) {
       handleApiError(res, error);
@@ -292,7 +326,7 @@ async function startServer() {
       }
 
       const webhookSecret = crypto.randomBytes(20).toString('hex');
-      const bot = await createUserBot(req.directusToken!, {
+      const bot = await createUserBot(req.authToken!, {
         name: name.trim(),
         bale_username: baleUsername,
         bot_token: bot_token.trim(),
@@ -301,8 +335,8 @@ async function startServer() {
         is_active: true,
       });
 
-      // Automatically provision starter Persian flow in Directus bot_flows
-      const flow = await createBotFlow(req.directusToken!, {
+      // Automatically provision starter Persian flow in bot_flows
+      const flow = await createBotFlow(req.authToken!, {
         bot_id: bot.id,
         name: 'جریان اصلی گفتگو',
         version: 1,
@@ -318,7 +352,14 @@ async function startServer() {
 
   app.patch('/api/bots/:id', requireBearerToken, async (req: AuthedRequest, res) => {
     try {
-      const bot = await updateUserBot(req.directusToken!, req.params.id, req.body);
+      const payload = pickAllowedFields(req.body, [
+        'name',
+        'bale_username',
+        'bot_token',
+        'webhook_status',
+        'is_active',
+      ]);
+      const bot = await updateUserBot(req.authToken!, req.params.id, payload);
       res.json({ bot });
     } catch (error) {
       handleApiError(res, error);
@@ -327,7 +368,7 @@ async function startServer() {
 
   app.delete('/api/bots/:id', requireBearerToken, async (req: AuthedRequest, res) => {
     try {
-      await deleteUserBot(req.directusToken!, req.params.id);
+      await deleteUserBot(req.authToken!, req.params.id);
       res.json({ ok: true });
     } catch (error) {
       handleApiError(res, error);
@@ -336,13 +377,13 @@ async function startServer() {
 
   app.post('/api/bots/:id/webhook/register', requireBearerToken, async (req: AuthedRequest, res) => {
     try {
-      const bot = await getUserBot(req.directusToken!, req.params.id);
+      const bot = await getUserBot(req.authToken!, req.params.id);
       const baseUrl = resolvePublicBaseUrl(req);
       const webhookUrl = `${baseUrl}/api/webhooks/bale/${bot.webhook_secret}`;
 
       const baleRes = await setBaleWebhook(bot.bot_token, webhookUrl, bot.webhook_secret);
       const status = baleRes.ok ? 'active' : 'error';
-      const updatedBot = await updateUserBot(req.directusToken!, bot.id, {
+      const updatedBot = await updateUserBot(req.authToken!, bot.id, {
         webhook_status: status,
       });
 
@@ -363,9 +404,9 @@ async function startServer() {
 
   app.post('/api/bots/:id/webhook/remove', requireBearerToken, async (req: AuthedRequest, res) => {
     try {
-      const bot = await getUserBot(req.directusToken!, req.params.id);
+      const bot = await getUserBot(req.authToken!, req.params.id);
       await deleteBaleWebhook(bot.bot_token);
-      const updatedBot = await updateUserBot(req.directusToken!, bot.id, {
+      const updatedBot = await updateUserBot(req.authToken!, bot.id, {
         webhook_status: 'inactive',
       });
       res.json({ ok: true, bot: updatedBot });
@@ -377,7 +418,7 @@ async function startServer() {
   // ---------------- Flows, Forms, Logs, Sessions ----------------
   app.get('/api/bots/:id/flow', requireBearerToken, async (req: AuthedRequest, res) => {
     try {
-      const flows = await listBotFlows(req.directusToken!, req.params.id);
+      const flows = await listBotFlows(req.authToken!, req.params.id);
       res.json({ flow: flows[0] || null, flows });
     } catch (error) {
       handleApiError(res, error);
@@ -405,7 +446,7 @@ async function startServer() {
         return;
       }
 
-      const existing = await listBotFlows(req.directusToken!, req.params.id);
+      const existing = await listBotFlows(req.authToken!, req.params.id);
 
       if (saveAsNewVersion || existing.length === 0) {
         const maxVersion = existing.reduce((max, item) => Math.max(max, item.version || 1), 0);
@@ -413,17 +454,17 @@ async function startServer() {
           await Promise.all(
             existing
               .filter((f) => f.is_published)
-              .map((f) => updateBotFlow(req.directusToken!, f.id, { is_published: false }))
+              .map((f) => updateBotFlow(req.authToken!, f.id, { is_published: false }))
           );
         }
-        const created = await createBotFlow(req.directusToken!, {
+        const created = await createBotFlow(req.authToken!, {
           bot_id: req.params.id,
           name: name || existing[0]?.name || 'جریان اصلی گفتگو',
           version: maxVersion + 1,
           is_published,
           flow_json,
         });
-        const flows = await listBotFlows(req.directusToken!, req.params.id);
+        const flows = await listBotFlows(req.authToken!, req.params.id);
         res.status(201).json({ flow: created, flows });
         return;
       }
@@ -433,16 +474,16 @@ async function startServer() {
         await Promise.all(
           existing
             .filter((f) => f.id !== targetId && f.is_published)
-            .map((f) => updateBotFlow(req.directusToken!, f.id, { is_published: false }))
+            .map((f) => updateBotFlow(req.authToken!, f.id, { is_published: false }))
         );
       }
 
-      const updated = await updateBotFlow(req.directusToken!, targetId, {
+      const updated = await updateBotFlow(req.authToken!, targetId, {
         name: name || existing.find((f) => f.id === targetId)?.name || 'جریان اصلی گفتگو',
         flow_json,
         is_published,
       });
-      const flows = await listBotFlows(req.directusToken!, req.params.id);
+      const flows = await listBotFlows(req.authToken!, req.params.id);
       res.json({ flow: updated, flows });
     } catch (error) {
       handleApiError(res, error);
@@ -454,7 +495,7 @@ async function startServer() {
     requireBearerToken,
     async (req: AuthedRequest, res) => {
       try {
-        const existing = await listBotFlows(req.directusToken!, req.params.id);
+        const existing = await listBotFlows(req.authToken!, req.params.id);
         const target = existing.find((f) => f.id === req.params.flowId);
         if (!target) {
           res.status(404).json({ error: 'نسخه جریان مورد نظر یافت نشد.' });
@@ -464,13 +505,13 @@ async function startServer() {
         await Promise.all(
           existing
             .filter((f) => f.id !== target.id && f.is_published)
-            .map((f) => updateBotFlow(req.directusToken!, f.id, { is_published: false }))
+            .map((f) => updateBotFlow(req.authToken!, f.id, { is_published: false }))
         );
 
-        const published = await updateBotFlow(req.directusToken!, target.id, {
+        const published = await updateBotFlow(req.authToken!, target.id, {
           is_published: true,
         });
-        const flows = await listBotFlows(req.directusToken!, req.params.id);
+        const flows = await listBotFlows(req.authToken!, req.params.id);
         res.json({ flow: published, flows });
       } catch (error) {
         handleApiError(res, error);
@@ -480,7 +521,7 @@ async function startServer() {
 
   app.get('/api/bots/:id/forms', requireBearerToken, async (req: AuthedRequest, res) => {
     try {
-      const forms = await listCollectedForms(req.directusToken!, req.params.id);
+      const forms = await listCollectedForms(req.authToken!, req.params.id);
       res.json({ forms });
     } catch (error) {
       handleApiError(res, error);
@@ -489,7 +530,7 @@ async function startServer() {
 
   app.delete('/api/bots/:id/forms/:recordId', requireBearerToken, async (req: AuthedRequest, res) => {
     try {
-      await deleteCollectedForm(req.directusToken!, req.params.recordId);
+      await deleteCollectedForm(req.authToken!, req.params.recordId);
       res.json({ ok: true });
     } catch (error) {
       handleApiError(res, error);
@@ -498,7 +539,7 @@ async function startServer() {
 
   app.get('/api/bots/:id/logs', requireBearerToken, async (req: AuthedRequest, res) => {
     try {
-      const logs = await listWebhookLogs(req.directusToken!, req.params.id);
+      const logs = await listWebhookLogs(req.authToken!, req.params.id);
       res.json({ logs });
     } catch (error) {
       handleApiError(res, error);
@@ -507,7 +548,7 @@ async function startServer() {
 
   app.get('/api/bots/:id/sessions', requireBearerToken, async (req: AuthedRequest, res) => {
     try {
-      const sessions = await listBotSessions(req.directusToken!, req.params.id);
+      const sessions = await listBotSessions(req.authToken!, req.params.id);
       res.json({ sessions });
     } catch (error) {
       handleApiError(res, error);
@@ -516,7 +557,7 @@ async function startServer() {
 
   app.get('/api/bots/:id/contacts', requireBearerToken, async (req: AuthedRequest, res) => {
     try {
-      const contacts = await listBotContacts(req.directusToken!, req.params.id);
+      const contacts = await listBotContacts(req.authToken!, req.params.id);
       res.json({ contacts });
     } catch (error) {
       handleApiError(res, error);
@@ -528,7 +569,15 @@ async function startServer() {
     requireBearerToken,
     async (req: AuthedRequest, res) => {
       try {
-        const contact = await updateBotContact(req.directusToken!, req.params.contactId, req.body);
+        const payload = pickAllowedFields(req.body, [
+          'first_name',
+          'last_name',
+          'phone',
+          'tags',
+          'custom_fields',
+          'is_blocked',
+        ]);
+        const contact = await updateBotContact(req.authToken!, req.params.contactId, payload);
         res.json({ contact });
       } catch (error) {
         handleApiError(res, error);
@@ -541,7 +590,7 @@ async function startServer() {
     requireBearerToken,
     async (req: AuthedRequest, res) => {
       try {
-        await deleteBotContact(req.directusToken!, req.params.contactId);
+        await deleteBotContact(req.authToken!, req.params.contactId);
         res.json({ ok: true });
       } catch (error) {
         handleApiError(res, error);
@@ -552,7 +601,7 @@ async function startServer() {
   // ---------------- Products & Orders (Phase 3) ----------------
   app.get('/api/bots/:id/products', requireBearerToken, async (req: AuthedRequest, res) => {
     try {
-      const products = await listUserProducts(req.directusToken!, req.params.id);
+      const products = await listUserProducts(req.authToken!, req.params.id);
       res.json({ products });
     } catch (error) {
       handleApiError(res, error);
@@ -574,7 +623,7 @@ async function startServer() {
         res.status(400).json({ error: 'عنوان محصول یا خدمت الزامی است.' });
         return;
       }
-      const product = await createUserProduct(req.directusToken!, {
+      const product = await createUserProduct(req.authToken!, {
         bot_id: req.params.id,
         title: title.trim(),
         description: description?.trim() || null,
@@ -595,10 +644,19 @@ async function startServer() {
     requireBearerToken,
     async (req: AuthedRequest, res) => {
       try {
+        const payload = pickAllowedFields(req.body, [
+          'title',
+          'description',
+          'category',
+          'price',
+          'stock',
+          'image_url',
+          'is_active',
+        ]);
         const product = await updateUserProduct(
-          req.directusToken!,
+          req.authToken!,
           req.params.productId,
-          req.body
+          payload
         );
         res.json({ product });
       } catch (error) {
@@ -612,7 +670,7 @@ async function startServer() {
     requireBearerToken,
     async (req: AuthedRequest, res) => {
       try {
-        await deleteUserProduct(req.directusToken!, req.params.productId);
+        await deleteUserProduct(req.authToken!, req.params.productId);
         res.json({ ok: true });
       } catch (error) {
         handleApiError(res, error);
@@ -622,7 +680,7 @@ async function startServer() {
 
   app.get('/api/bots/:id/orders', requireBearerToken, async (req: AuthedRequest, res) => {
     try {
-      const orders = await listBotOrders(req.directusToken!, req.params.id);
+      const orders = await listBotOrders(req.authToken!, req.params.id);
       res.json({ orders });
     } catch (error) {
       handleApiError(res, error);
@@ -634,7 +692,8 @@ async function startServer() {
     requireBearerToken,
     async (req: AuthedRequest, res) => {
       try {
-        const order = await updateBotOrder(req.directusToken!, req.params.orderId, req.body);
+        const payload = pickAllowedFields(req.body, ['status', 'note']);
+        const order = await updateBotOrder(req.authToken!, req.params.orderId, payload);
         res.json({ order });
       } catch (error) {
         handleApiError(res, error);
@@ -647,7 +706,7 @@ async function startServer() {
     requireBearerToken,
     async (req: AuthedRequest, res) => {
       try {
-        await deleteBotOrder(req.directusToken!, req.params.orderId);
+        await deleteBotOrder(req.authToken!, req.params.orderId);
         res.json({ ok: true });
       } catch (error) {
         handleApiError(res, error);
@@ -658,7 +717,7 @@ async function startServer() {
   // ---------------- Surveys & Responses (Phase 3) ----------------
   app.get('/api/bots/:id/surveys', requireBearerToken, async (req: AuthedRequest, res) => {
     try {
-      const surveys = await listBotSurveys(req.directusToken!, req.params.id);
+      const surveys = await listBotSurveys(req.authToken!, req.params.id);
       res.json({ surveys });
     } catch (error) {
       handleApiError(res, error);
@@ -677,7 +736,7 @@ async function startServer() {
         res.status(400).json({ error: 'عنوان نظرسنجی الزامی است.' });
         return;
       }
-      const survey = await createUserSurvey(req.directusToken!, {
+      const survey = await createUserSurvey(req.authToken!, {
         bot_id: req.params.id,
         title: title.trim(),
         type,
@@ -695,7 +754,13 @@ async function startServer() {
     requireBearerToken,
     async (req: AuthedRequest, res) => {
       try {
-        const survey = await updateUserSurvey(req.directusToken!, req.params.surveyId, req.body);
+        const payload = pickAllowedFields(req.body, [
+          'title',
+          'type',
+          'questions_json',
+          'allow_multiple',
+        ]);
+        const survey = await updateUserSurvey(req.authToken!, req.params.surveyId, payload);
         res.json({ survey });
       } catch (error) {
         handleApiError(res, error);
@@ -708,7 +773,7 @@ async function startServer() {
     requireBearerToken,
     async (req: AuthedRequest, res) => {
       try {
-        await deleteUserSurvey(req.directusToken!, req.params.surveyId);
+        await deleteUserSurvey(req.authToken!, req.params.surveyId);
         res.json({ ok: true });
       } catch (error) {
         handleApiError(res, error);
@@ -721,7 +786,7 @@ async function startServer() {
     requireBearerToken,
     async (req: AuthedRequest, res) => {
       try {
-        const responses = await listSurveyResponses(req.directusToken!, req.params.id);
+        const responses = await listSurveyResponses(req.authToken!, req.params.id);
         res.json({ responses });
       } catch (error) {
         handleApiError(res, error);
@@ -734,7 +799,7 @@ async function startServer() {
     requireBearerToken,
     async (req: AuthedRequest, res) => {
       try {
-        await deleteSurveyResponse(req.directusToken!, req.params.responseId);
+        await deleteSurveyResponse(req.authToken!, req.params.responseId);
         res.json({ ok: true });
       } catch (error) {
         handleApiError(res, error);
@@ -745,7 +810,7 @@ async function startServer() {
   // ---------------- Booking Services, Schedules & Appointments (Phase 4) ----------------
   app.get('/api/bots/:id/booking-services', requireBearerToken, async (req: AuthedRequest, res) => {
     try {
-      const services = await listBookingServices(req.directusToken!, req.params.id);
+      const services = await listBookingServices(req.authToken!, req.params.id);
       res.json({ services });
     } catch (error) {
       handleApiError(res, error);
@@ -767,7 +832,7 @@ async function startServer() {
         res.status(400).json({ error: 'عنوان سرویس نوبت‌دهی الزامی است.' });
         return;
       }
-      const service = await createBookingService(req.directusToken!, {
+      const service = await createBookingService(req.authToken!, {
         bot_id: req.params.id,
         title: title.trim(),
         description: description?.trim() || null,
@@ -787,10 +852,18 @@ async function startServer() {
     requireBearerToken,
     async (req: AuthedRequest, res) => {
       try {
+        const payload = pickAllowedFields(req.body, [
+          'title',
+          'description',
+          'duration_minutes',
+          'capacity_per_slot',
+          'price',
+          'is_active',
+        ]);
         const service = await updateBookingService(
-          req.directusToken!,
+          req.authToken!,
           req.params.serviceId,
-          req.body
+          payload
         );
         res.json({ service });
       } catch (error) {
@@ -804,7 +877,7 @@ async function startServer() {
     requireBearerToken,
     async (req: AuthedRequest, res) => {
       try {
-        await deleteBookingService(req.directusToken!, req.params.serviceId);
+        await deleteBookingService(req.authToken!, req.params.serviceId);
         res.json({ ok: true });
       } catch (error) {
         handleApiError(res, error);
@@ -814,7 +887,7 @@ async function startServer() {
 
   app.get('/api/bots/:id/booking-schedules', requireBearerToken, async (req: AuthedRequest, res) => {
     try {
-      const schedules = await listBookingSchedules(req.directusToken!, req.params.id);
+      const schedules = await listBookingSchedules(req.authToken!, req.params.id);
       res.json({ schedules });
     } catch (error) {
       handleApiError(res, error);
@@ -839,12 +912,18 @@ async function startServer() {
           res.status(400).json({ error: 'انتخاب سرویس، ساعت شروع و ساعت پایان الزامی است.' });
           return;
         }
-        const schedule = await createBookingSchedule(req.directusToken!, {
+        const startMin = parseTimeToMinutes(start_time);
+        const endMin = parseTimeToMinutes(end_time);
+        if (startMin === null || endMin === null || endMin <= startMin) {
+          res.status(400).json({ error: 'بازه زمانی نامعتبر است: ساعت پایان باید بعد از ساعت شروع باشد.' });
+          return;
+        }
+        const schedule = await createBookingSchedule(req.authToken!, {
           bot_id: req.params.id,
           service_id,
           weekday: Number(weekday ?? 0),
-          start_time,
-          end_time,
+          start_time: start_time.trim(),
+          end_time: end_time.trim(),
           blocked_dates: Array.isArray(blocked_dates) ? blocked_dates : [],
           is_active: is_active !== false,
         });
@@ -860,10 +939,33 @@ async function startServer() {
     requireBearerToken,
     async (req: AuthedRequest, res) => {
       try {
+        const payload = pickAllowedFields<BookingScheduleRecord>(req.body, [
+          'weekday',
+          'start_time',
+          'end_time',
+          'blocked_dates',
+          'is_active',
+        ]);
+        if (payload.start_time !== undefined && parseTimeToMinutes(payload.start_time) === null) {
+          res.status(400).json({ error: 'فرمت ساعت شروع نامعتبر است.' });
+          return;
+        }
+        if (payload.end_time !== undefined && parseTimeToMinutes(payload.end_time) === null) {
+          res.status(400).json({ error: 'فرمت ساعت پایان نامعتبر است.' });
+          return;
+        }
+        if (payload.start_time !== undefined && payload.end_time !== undefined) {
+          const s = parseTimeToMinutes(payload.start_time)!;
+          const e = parseTimeToMinutes(payload.end_time)!;
+          if (e <= s) {
+            res.status(400).json({ error: 'ساعت پایان باید بعد از ساعت شروع باشد.' });
+            return;
+          }
+        }
         const schedule = await updateBookingSchedule(
-          req.directusToken!,
+          req.authToken!,
           req.params.scheduleId,
-          req.body
+          payload
         );
         res.json({ schedule });
       } catch (error) {
@@ -877,7 +979,7 @@ async function startServer() {
     requireBearerToken,
     async (req: AuthedRequest, res) => {
       try {
-        await deleteBookingSchedule(req.directusToken!, req.params.scheduleId);
+        await deleteBookingSchedule(req.authToken!, req.params.scheduleId);
         res.json({ ok: true });
       } catch (error) {
         handleApiError(res, error);
@@ -887,7 +989,7 @@ async function startServer() {
 
   app.get('/api/bots/:id/appointments', requireBearerToken, async (req: AuthedRequest, res) => {
     try {
-      const appointments = await listAppointments(req.directusToken!, req.params.id);
+      const appointments = await listAppointments(req.authToken!, req.params.id);
       res.json({ appointments });
     } catch (error) {
       handleApiError(res, error);
@@ -899,10 +1001,11 @@ async function startServer() {
     requireBearerToken,
     async (req: AuthedRequest, res) => {
       try {
+        const payload = pickAllowedFields(req.body, ['status', 'note', 'reminder_sent']);
         const appointment = await updateAppointment(
-          req.directusToken!,
+          req.authToken!,
           req.params.appointmentId,
-          req.body
+          payload
         );
         res.json({ appointment });
       } catch (error) {
@@ -916,7 +1019,7 @@ async function startServer() {
     requireBearerToken,
     async (req: AuthedRequest, res) => {
       try {
-        await deleteAppointment(req.directusToken!, req.params.appointmentId);
+        await deleteAppointment(req.authToken!, req.params.appointmentId);
         res.json({ ok: true });
       } catch (error) {
         handleApiError(res, error);
@@ -929,7 +1032,7 @@ async function startServer() {
     requireBearerToken,
     async (req: AuthedRequest, res) => {
       try {
-        await getUserBot(req.directusToken!, req.params.id);
+        await getUserBot(req.authToken!, req.params.id);
         const summary = await runAppointmentReminderSweep(req.params.id);
         res.json(summary);
       } catch (error) {
@@ -941,7 +1044,7 @@ async function startServer() {
   // ---------------- Broadcast Campaigns (Phase 4) ----------------
   app.get('/api/bots/:id/campaigns', requireBearerToken, async (req: AuthedRequest, res) => {
     try {
-      const campaigns = await listBroadcastCampaigns(req.directusToken!, req.params.id);
+      const campaigns = await listBroadcastCampaigns(req.authToken!, req.params.id);
       res.json({ campaigns });
     } catch (error) {
       handleApiError(res, error);
@@ -961,14 +1064,23 @@ async function startServer() {
         res.status(400).json({ error: 'عنوان کمپین و متن پیام ارسالی الزامی است.' });
         return;
       }
-      const campaign = await createBroadcastCampaign(req.directusToken!, {
+      let normalizedScheduledAt: string | null = null;
+      if (scheduled_at) {
+        const parsedMs = Date.parse(scheduled_at);
+        if (Number.isNaN(parsedMs)) {
+          res.status(400).json({ error: 'فرمت تاریخ و زمان زمان‌بندی نامعتبر است.' });
+          return;
+        }
+        normalizedScheduledAt = new Date(parsedMs).toISOString();
+      }
+      const campaign = await createBroadcastCampaign(req.authToken!, {
         bot_id: req.params.id,
         title: title.trim(),
         message_text: message_text.trim(),
         media_url: media_url?.trim() || null,
         target_tags: Array.isArray(target_tags) ? target_tags : [],
-        scheduled_at: scheduled_at || null,
-        status: scheduled_at ? 'queued' : 'draft',
+        scheduled_at: normalizedScheduledAt,
+        status: normalizedScheduledAt ? 'queued' : 'draft',
       });
       res.status(201).json({ campaign });
     } catch (error) {
@@ -981,10 +1093,40 @@ async function startServer() {
     requireBearerToken,
     async (req: AuthedRequest, res) => {
       try {
+        const payload = pickAllowedFields<{
+          title?: string;
+          message_text?: string;
+          media_url?: string | null;
+          target_tags?: string[];
+          status?: BroadcastCampaignStatus;
+          scheduled_at?: string | null;
+        }>(req.body, [
+          'title',
+          'message_text',
+          'media_url',
+          'target_tags',
+          'status',
+          'scheduled_at',
+        ]);
+        if (
+          payload.status !== undefined &&
+          !['draft', 'queued', 'sending', 'completed', 'failed'].includes(payload.status)
+        ) {
+          res.status(400).json({ error: 'وضعیت کمپین نامعتبر است.' });
+          return;
+        }
+        if (payload.scheduled_at) {
+          const parsedMs = Date.parse(payload.scheduled_at);
+          if (Number.isNaN(parsedMs)) {
+            res.status(400).json({ error: 'فرمت تاریخ و زمان زمان‌بندی نامعتبر است.' });
+            return;
+          }
+          payload.scheduled_at = new Date(parsedMs).toISOString();
+        }
         const campaign = await updateBroadcastCampaign(
-          req.directusToken!,
+          req.authToken!,
           req.params.campaignId,
-          req.body
+          payload
         );
         res.json({ campaign });
       } catch (error) {
@@ -998,7 +1140,7 @@ async function startServer() {
     requireBearerToken,
     async (req: AuthedRequest, res) => {
       try {
-        await deleteBroadcastCampaign(req.directusToken!, req.params.campaignId);
+        await deleteBroadcastCampaign(req.authToken!, req.params.campaignId);
         res.json({ ok: true });
       } catch (error) {
         handleApiError(res, error);
@@ -1011,10 +1153,14 @@ async function startServer() {
     requireBearerToken,
     async (req: AuthedRequest, res) => {
       try {
-        await getUserBot(req.directusToken!, req.params.id);
+        await getUserBot(req.authToken!, req.params.id);
         const existingCampaign = await getCampaignAsAdmin(req.params.campaignId);
         if (!existingCampaign || existingCampaign.bot_id !== req.params.id) {
           res.status(404).json({ error: 'کمپین مورد نظر برای این بازو یافت نشد.' });
+          return;
+        }
+        if (existingCampaign.status === 'sending') {
+          res.json({ ok: true, campaign: existingCampaign });
           return;
         }
         const queued = await updateCampaignAsAdmin(req.params.campaignId, {

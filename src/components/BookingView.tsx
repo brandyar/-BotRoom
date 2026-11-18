@@ -207,7 +207,7 @@ export function BookingView({
         setSvcFormOpen(false);
         return;
       }
-      setError('برای ذخیره در دایرکتوس وارد حساب کاربری شوید.');
+      setError('برای ذخیره اطلاعات وارد حساب کاربری شوید.');
       return;
     }
 
@@ -283,6 +283,18 @@ export function BookingView({
     e.preventDefault();
     if (!schServiceId) {
       setError('ابتدا باید یک خدمت نوبت‌دهی انتخاب یا ایجاد کنید.');
+      return;
+    }
+    const [sh, sm] = schStartTime.split(':').map(Number);
+    const [eh, em] = schEndTime.split(':').map(Number);
+    if (
+      !Number.isFinite(sh) ||
+      !Number.isFinite(sm) ||
+      !Number.isFinite(eh) ||
+      !Number.isFinite(em) ||
+      eh * 60 + em <= sh * 60 + sm
+    ) {
+      setError('ساعت پایان باید بعد از ساعت شروع باشد.');
       return;
     }
     const blockedArr = schBlockedDates

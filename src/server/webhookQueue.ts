@@ -3,8 +3,8 @@ import {
   createWebhookLogAsAdmin,
   findBotByWebhookSecret,
   findPublishedFlowForBot,
-  getDirectusConfig,
-} from './directus.ts';
+  getBackendConfig,
+} from './backend.ts';
 import { executeBotFlow } from './flowEngine.ts';
 import { getRedisClient } from './sessionStore.ts';
 
@@ -141,9 +141,9 @@ export async function enqueueWebhookUpdate(
   update: BaleUpdate,
   attempts = 0
 ): Promise<{ queued: boolean; driver: 'redis' | 'memory' }> {
-  const { isConfigured, hasAdminToken } = getDirectusConfig();
+  const { isConfigured, hasAdminToken } = getBackendConfig();
   if (!isConfigured || !hasAdminToken) {
-    throw new Error('Directus server credentials are not configured.');
+    throw new Error('Backend server credentials are not configured.');
   }
 
   const job: WebhookJob = {

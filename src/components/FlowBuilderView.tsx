@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   ArrowDown,
@@ -183,20 +183,33 @@ export function FlowBuilderView({
     [flows, flowId]
   );
 
+  useEffect(() => {
+    setSimMessages([]);
+    setSimContext({});
+    setSimTags([]);
+    setSimError(null);
+  }, [botId]);
+
+  useEffect(() => {
+    if (!normalizedFlow.nodes.some((n) => n.id === selectedNodeId)) {
+      setSelectedNodeId(normalizedFlow.startNodeId || normalizedFlow.nodes[0]?.id || '');
+    }
+  }, [flowId, normalizedFlow.nodes, normalizedFlow.startNodeId, selectedNodeId]);
+
   const nodeTitleMap = useMemo(() => {
     const map = new Map<string, string>();
-    for (const node of flow.nodes) {
+    for (const node of normalizedFlow.nodes) {
       map.set(node.id, node.title);
     }
     return map;
-  }, [flow.nodes]);
+  }, [normalizedFlow.nodes]);
 
   const questionFields = useMemo(
     () =>
-      flow.nodes
+      normalizedFlow.nodes
         .filter((n) => n.type === 'question' && n.fieldKey)
         .map((n) => ({ key: n.fieldKey!, label: n.fieldLabel || n.fieldKey! })),
-    [flow.nodes]
+    [normalizedFlow.nodes]
   );
 
   function updateNode(nodeId: string, patch: Partial<FlowNode>) {
@@ -284,7 +297,7 @@ export function FlowBuilderView({
       trigger: {
         title: 'دستور جدید',
         triggerPattern: '/help',
-        nextNodeId: flow.nodes[1]?.id || '',
+        nextNodeId: normalizedFlow.nodes[1]?.id || '',
       },
       message: {
         title: 'پیام جدید',
@@ -294,7 +307,7 @@ export function FlowBuilderView({
       question: {
         title: 'سوال فرم جدید',
         messageText: 'لطفاً مقدار مورد نظر را وارد کنید:',
-        fieldKey: `field_${flow.nodes.length + 1}`,
+        fieldKey: `field_${normalizedFlow.nodes.length + 1}`,
         fieldLabel: 'فیلد جدید',
         inputType: 'text',
         validationErrorText: 'ورودی نامعتبر است.',
@@ -420,7 +433,7 @@ export function FlowBuilderView({
     const newBtn: InlineButtonConfig = {
       id: `btn_${Date.now().toString(36)}`,
       text: 'دکمه جدید',
-      targetNodeId: flow.nodes[0]?.id || '',
+      targetNodeId: normalizedFlow.nodes[0]?.id || '',
     };
     updateNode(node.id, {
       inlineButtons: [...(node.inlineButtons || []), newBtn],
@@ -496,7 +509,7 @@ export function FlowBuilderView({
       const res = await api.simulateDispatch({
         botId: botId || 'simulator-bot',
         userName: 'کاربر آزمایشی',
-        flow,
+        flow: normalizedFlow,
         text,
         callbackData,
         contactPhone,
@@ -810,7 +823,7 @@ export function FlowBuilderView({
                   disabled={saving}
                   onClick={() => handlePublishClick(true)}
                   className="px-3 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-200 hover:bg-slate-50 disabled:opacity-60 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-                  title="ساخت نسخه جدید از جریان فعلی در دایرکتوس"
+                  title="ساخت نسخه جدید از جریان فعلی"
                 >
                   ذخیره نسخه جدید
                 </button>
@@ -964,13 +977,13 @@ export function FlowBuilderView({
                     درخت جریان گفتگو · {flowName}
                   </h3>
                   <p className="text-xs text-slate-500 mt-0.5 tabular-nums">
-                    تعداد گره‌ها: {toPersianDigits(flow.nodes.length)} · برای ویرایش روی هر گره کلیک کنید
+                    تعداد گره‌ها: {toPersianDigits(normalizedFlow.nodes.length)} · برای ویرایش روی هر گره کلیک کنید
                   </p>
                 </div>
               </div>
 
               <div className="space-y-3">
-                {flow.nodes.map((node, index) => {
+                {normalizedFlow.nodes.map((node, index) => {
                   const isSelected = selectedNode?.id === node.id;
                   const nextTitle = node.nextNodeId ? nodeTitleMap.get(node.nextNodeId) : null;
 
@@ -1102,7 +1115,7 @@ export function FlowBuilderView({
                             )}
                           </div>
 
-                          {flow.nodes.length > 1 && (
+                          {normalizedFlow.nodes.length > 1 && (
                             <button
                               type="button"
                               onClick={(e) => {
@@ -1118,7 +1131,7 @@ export function FlowBuilderView({
                         </div>
                       </div>
 
-                      {nextTitle && index < flow.nodes.length - 1 && (
+                      {nextTitle && index < normalizedFlow.nodes.length - 1 && (
                         <div className="flex items-center gap-1.5 pr-4 text-xs text-slate-400">
                           <ArrowDown className="w-3.5 h-3.5" />
                           <span>انتقال بعدی: {nextTitle}</span>
@@ -1135,8 +1148,8 @@ export function FlowBuilderView({
                 </label>
                 <input
                   type="text"
-                  value={flow.fallbackText}
-                  onChange={(e) => onChangeFlow({ ...flow, fallbackText: e.target.value })}
+                  value={normalizedFlow.fallbackText}
+                  onChange={(e) => onChangeFlow({ ...normalizedFlow, fallbackText: e.target.value })}
                   className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-emerald-600"
                 />
               </div>
@@ -1567,7 +1580,7 @@ export function FlowBuilderView({
               {selectedNode.type === 'save_form' && (
                 <div>
                   <label className="block text-xs font-medium text-slate-700 mb-1">
-                    عنوان فرم برای ذخیره در دایرکتوس
+                    عنوان فرم برای ذخیره در پایگاه داده
                   </label>
                   <input
                     type="text"
@@ -1922,7 +1935,7 @@ export function FlowBuilderView({
                         className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white"
                       >
                         <option value="">ندارد (ادامه مسیر عادی)</option>
-                        {flow.nodes
+                        {normalizedFlow.nodes
                           .filter((n) => n.id !== selectedNode.id)
                           .map((n) => (
                             <option key={n.id} value={n.id}>
@@ -2198,7 +2211,7 @@ export function FlowBuilderView({
                         className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white"
                       >
                         <option value="">انتخاب گره...</option>
-                        {flow.nodes
+                        {normalizedFlow.nodes
                           .filter((n) => n.id !== selectedNode.id)
                           .map((n) => (
                             <option key={n.id} value={n.id}>
@@ -2221,7 +2234,7 @@ export function FlowBuilderView({
                         className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white"
                       >
                         <option value="">انتخاب گره...</option>
-                        {flow.nodes
+                        {normalizedFlow.nodes
                           .filter((n) => n.id !== selectedNode.id)
                           .map((n) => (
                             <option key={n.id} value={n.id}>
@@ -2284,7 +2297,7 @@ export function FlowBuilderView({
                         className="w-full px-2.5 py-1.5 text-xs bg-white border border-slate-200 rounded-md focus:outline-none focus:border-emerald-600"
                       >
                         <option value="">انتخاب گره مقصد پس از کلیک...</option>
-                        {flow.nodes
+                        {normalizedFlow.nodes
                           .filter((n) => n.id !== selectedNode.id)
                           .map((n) => (
                             <option key={n.id} value={n.id}>
@@ -2309,7 +2322,7 @@ export function FlowBuilderView({
                     className="w-full px-3 py-2 text-xs border border-slate-200 rounded-lg bg-white focus:outline-none focus:border-emerald-600"
                   >
                     <option value="">توقف / پایان</option>
-                    {flow.nodes
+                    {normalizedFlow.nodes
                       .filter((n) => n.id !== selectedNode.id)
                       .map((n) => (
                         <option key={n.id} value={n.id}>

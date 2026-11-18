@@ -92,7 +92,7 @@ export function BroadcastView({
 
   async function handleCreateCampaign(sendImmediately: boolean) {
     if (!token || !botId) {
-      setError('برای ارسال پیام گروهی ابتدا وارد حساب دایرکتوس شوید.');
+      setError('برای ارسال پیام گروهی ابتدا وارد حساب کاربری خود شوید.');
       return;
     }
     if (!title.trim() || !messageText.trim()) {
@@ -104,8 +104,16 @@ export function BroadcastView({
     setError(null);
     setNotice(null);
     try {
-      const isoSchedule =
-        !sendImmediately && scheduledAt ? new Date(scheduledAt).toISOString() : null;
+      let isoSchedule: string | null = null;
+      if (!sendImmediately && scheduledAt) {
+        const parsedSchedule = new Date(scheduledAt);
+        if (Number.isNaN(parsedSchedule.getTime())) {
+          setError('فرمت تاریخ و زمان زمان‌بندی نامعتبر است.');
+          setSubmitting(false);
+          return;
+        }
+        isoSchedule = parsedSchedule.toISOString();
+      }
       const createdRes = await api.createCampaign(token, botId, {
         title: title.trim(),
         message_text: messageText.trim(),

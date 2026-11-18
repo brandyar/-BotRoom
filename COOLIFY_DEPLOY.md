@@ -25,9 +25,9 @@
 | `NODE_ENV` | `production` | حالت اجرایی تولید (الزامی) |
 | `PORT` | `3000` | پورت پیش‌فرض سرور Express |
 | `APP_URL` | `https://bot.yourdomain.com` | دامنه نهایی اپ روی Coolify (بدون `/` انتهایی) — برای ثبت وب‌هوک بله ضروری است |
-| `DIRECTUS_URL` | `https://cms.yourdomain.com` | آدرس سرور دایرکتوس شما (بدون `/` انتهایی) |
-| `DIRECTUS_ADMIN_TOKEN` | `...` | توکن استاتیک ادمین دایرکتوس |
-| `DIRECTUS_DEFAULT_ROLE_ID` | `...` | شناسه UUID نقش کاربران در دایرکتوس |
+| `BACKEND_URL` | `https://api.yourdomain.com` | آدرس سرور پایگاه داده و احراز هویت (بدون `/` انتهایی) |
+| `BACKEND_ADMIN_TOKEN` | `...` | توکن استاتیک ادمین سرور |
+| `BACKEND_DEFAULT_ROLE_ID` | `...` | شناسه UUID نقش پیش‌فرض کاربران |
 | `REDIS_URL` | *(اختیاری — خالی بگذارید)* | در صورت خالی بودن از صف ناهمگام داخلی استفاده می‌شود |
 
 ---
@@ -35,7 +35,7 @@
 ## ۳. نکات مهم شبکه و وب‌هوک پیام‌رسان بله
 
 - **گواهی SSL (HTTPS)**: پیام‌رسان بله برای `setWebhook` آدرس **HTTPS معتبر** نیاز دارد؛ در Coolify دامنه اصلی را با `https://` متصل کنید (Traefik به‌صورت خودکار SSL می‌سازد).
-- **اگر Directus هم روی همین سرور Coolify است**:
-  - می‌توانید `DIRECTUS_URL` را آدرس عمومی `https://...` بگذارید، یا در صورت قرار دادن هر دو سرویس در یک شبکه مشترک Coolify (`coolify` network)، از آدرس داخلی سرویس دایرکتوس استفاده کنید.
+- **اگر سرویس بکند هم روی همین سرور Coolify است**:
+  - می‌توانید `BACKEND_URL` را آدرس عمومی `https://...` بگذارید، یا در صورت قرار دادن هر دو سرویس در یک شبکه مشترک Coolify (`coolify` network)، از آدرس داخلی سرویس استفاده کنید.
 - **بررسی سلامت پس از دیپلوی**:
-  - مسیر `https://your-domain.com/api/health` باید خروجی JSON با `"ok": true` و `"directusConfigured": true` برگرداند.
+  - مسیر `https://your-domain.com/api/health` باید خروجی JSON با `"ok": true` و `"backendConfigured": true` برگرداند.

@@ -283,7 +283,7 @@ export function CatalogOrdersView({
     ];
     const rows = filteredOrders.map((o) => [
       o.id.slice(0, 8),
-      o.customer_name || o.bale_user_id || '—',
+      o.customer_name || o.bale_user_name || o.bale_user_id || o.bale_chat_id || '—',
       o.customer_phone || '—',
       o.items.map((i) => `${i.title} (${i.quantity})`).join(' | '),
       String(o.total_amount || 0),
@@ -741,10 +741,14 @@ export function CatalogOrdersView({
                       <tr key={order.id} className="hover:bg-slate-50/70">
                         <td className="py-3 px-4 whitespace-nowrap">
                           <div className="font-semibold text-slate-900">
-                            {order.customer_name || `کاربر ${order.bale_user_id || ''}`}
+                            {order.customer_name ||
+                              order.bale_user_name ||
+                              (order.bale_user_id || order.bale_chat_id
+                                ? `کاربر ${order.bale_user_id || order.bale_chat_id}`
+                                : 'کاربر بله')}
                           </div>
                           <div className="text-[11px] font-mono text-slate-500 tabular-nums">
-                            {order.customer_phone || order.bale_user_id || '—'}
+                            {order.customer_phone || order.bale_user_id || order.bale_chat_id || '—'}
                           </div>
                         </td>
                         <td className="py-3 px-4 text-slate-700 max-w-xs">

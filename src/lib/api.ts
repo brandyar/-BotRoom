@@ -10,18 +10,18 @@ import type {
   BotSessionRecord,
   BroadcastCampaignRecord,
   CollectedFormRecord,
-  DirectusUser,
   FlowDefinition,
   ProductRecord,
   ScheduledFollowUpItem,
   SurveyRecord,
   SurveyResponseRecord,
   WebhookLogRecord,
+  AuthUser,
 } from '../types/bot.ts';
 
 export interface HealthResponse {
   ok: boolean;
-  directusConfigured: boolean;
+  backendConfigured: boolean;
   hasAdminToken: boolean;
   redisConfigured: boolean;
 }
@@ -30,7 +30,7 @@ export interface AuthResponse {
   access_token: string;
   refresh_token: string;
   expires: number;
-  user: DirectusUser;
+  user: AuthUser;
 }
 
 export interface SimulatorResponse {
@@ -116,7 +116,7 @@ export const api = {
       body: { refresh_token },
     }),
 
-  me: (token: string) => request<{ user: DirectusUser }>('/api/auth/me', { token }),
+  me: (token: string) => request<{ user: AuthUser }>('/api/auth/me', { token }),
 
   listBots: (token: string) => request<{ bots: BotRecord[] }>('/api/bots', { token }),
 

@@ -1,6 +1,7 @@
 import type {
   AppointmentRecord,
   AppointmentStatus,
+  AuthUser,
   BookingScheduleRecord,
   BookingServiceRecord,
   BotContactRecord,
@@ -11,7 +12,6 @@ import type {
   BroadcastCampaignRecord,
   BroadcastCampaignStatus,
   CollectedFormRecord,
-  DirectusUser,
   FlowDefinition,
   OrderCartItem,
   OrderStatus,
@@ -22,45 +22,45 @@ import type {
   WebhookLogRecord,
 } from '../types/bot.ts';
 
-export class DirectusConfigError extends Error {
-  constructor(message = 'متغیر محیطی DIRECTUS_URL روی سرور تنظیم نشده است.') {
+export class BackendConfigError extends Error {
+  constructor(message = 'متغیر محیطی BACKEND_URL روی سرور تنظیم نشده است.') {
     super(message);
-    this.name = 'DirectusConfigError';
+    this.name = 'BackendConfigError';
   }
 }
 
-export class DirectusApiError extends Error {
+export class BackendApiError extends Error {
   status: number;
   code?: string;
 
   constructor(message: string, status = 500, code?: string) {
     super(message);
-    this.name = 'DirectusApiError';
+    this.name = 'BackendApiError';
     this.status = status;
     this.code = code;
   }
 }
 
-export function getDirectusConfig() {
-  const url = (process.env.DIRECTUS_URL || '').trim().replace(/\/$/, '');
-  const adminToken = (process.env.DIRECTUS_ADMIN_TOKEN || '').trim();
-  const defaultRoleId = (process.env.DIRECTUS_DEFAULT_ROLE_ID || '').trim();
+export function getBackendConfig() {
+  const url = (process.env.BACKEND_URL || '').trim().replace(/\/$/, '');
+  const adminToken = (process.env.BACKEND_ADMIN_TOKEN || '').trim();
+  const defaultRoleId = (process.env.BACKEND_DEFAULT_ROLE_ID || '').trim();
 
   return {
     url,
     adminToken,
     defaultRoleId,
-    isConfigured: Boolean(url && !url.includes('your-directus-instance')),
-    hasAdminToken: Boolean(adminToken && !adminToken.includes('YOUR_DIRECTUS_ADMIN_TOKEN')),
+    isConfigured: Boolean(url && !url.includes('your-backend-instance')),
+    hasAdminToken: Boolean(adminToken && !adminToken.includes('YOUR_BACKEND_ADMIN_TOKEN')),
   };
 }
 
-interface DirectusResponse<T> {
+interface BackendResponse<T> {
   data: T;
   errors?: Array<{ message: string; extensions?: { code?: string } }>;
 }
 
-async function directusFetch<T>(
+async function backendFetch<T>(
   path: string,
   options: {
     method?: 'GET' | 'POST' | 'PATCH' | 'DELETE';
@@ -68,9 +68,9 @@ async function directusFetch<T>(
     body?: unknown;
   } = {}
 ): Promise<T> {
-  const { url, isConfigured } = getDirectusConfig();
+  const { url, isConfigured } = getBackendConfig();
   if (!isConfigured) {
-    throw new DirectusConfigError();
+    throw new BackendConfigError();
   }
 
   const headers: Record<string, string> = {
@@ -90,78 +90,78 @@ async function directusFetch<T>(
     return undefined as T;
   }
 
-  const json = (await res.json().catch(() => ({}))) as Partial<DirectusResponse<T>>;
+  const json = (await res.json().catch(() => ({}))) as Partial<BackendResponse<T>>;
   if (!res.ok) {
     const firstError = json.errors?.[0];
     const code = firstError?.extensions?.code;
     const rawDetail = firstError?.message ? String(firstError.message) : '';
-    let message = rawDetail || `Directus request failed (${res.status})`;
+    let message = rawDetail || `Backend request failed (${res.status})`;
     if (res.status === 403 || code === 'FORBIDDEN') {
       console.warn(
-        `[Directus 403] ${options.method || 'GET'} ${path}:`,
+        `[Backend 403] ${options.method || 'GET'} ${path}:`,
         rawDetail || code || res.statusText
       );
-      const detailSuffix = rawDetail ? ` (جزئیات دایرکتوس: ${rawDetail})` : '';
-      message = `دسترسی توسط دایرکتوس رد شد (403) در مسیر ${path}.${detailSuffix} لطفاً دسترسی‌های نقش/سیاست کاربر (Access Policy) را در دایرکتوس بررسی کنید.`;
+      const detailSuffix = rawDetail ? ` (جزئیات سرور: ${rawDetail})` : '';
+      message = `دسترسی توسط سرور پایگاه داده رد شد (403) در مسیر ${path}.${detailSuffix} لطفاً دسترسی‌های نقش/سیاست کاربر را در سرور بررسی کنید.`;
     }
-    throw new DirectusApiError(message, res.status, code);
+    throw new BackendApiError(message, res.status, code);
   }
 
   return json.data as T;
 }
 
 function requireAdminToken(): string {
-  const { adminToken, hasAdminToken } = getDirectusConfig();
+  const { adminToken, hasAdminToken } = getBackendConfig();
   if (!hasAdminToken) {
-    throw new DirectusConfigError('متغیر DIRECTUS_ADMIN_TOKEN برای عملیات سرور تنظیم نشده است.');
+    throw new BackendConfigError('متغیر BACKEND_ADMIN_TOKEN برای عملیات سرور تنظیم نشده است.');
   }
   return adminToken;
 }
 
 // ---------------- Auth Operations ----------------
 
-export interface DirectusAuthTokens {
+export interface BackendAuthTokens {
   access_token: string;
   refresh_token: string;
   expires: number;
 }
 
-export async function loginWithDirectus(email: string, password: string) {
-  return directusFetch<DirectusAuthTokens>('/auth/login', {
+export async function loginWithBackend(email: string, password: string) {
+  return backendFetch<BackendAuthTokens>('/auth/login', {
     method: 'POST',
     body: { email, password, mode: 'json' },
   });
 }
 
-export async function refreshDirectusToken(refreshToken: string) {
-  return directusFetch<DirectusAuthTokens>('/auth/refresh', {
+export async function refreshBackendToken(refreshToken: string) {
+  return backendFetch<BackendAuthTokens>('/auth/refresh', {
     method: 'POST',
     body: { refresh_token: refreshToken, mode: 'json' },
   });
 }
 
-export async function logoutDirectus(refreshToken: string) {
-  return directusFetch<void>('/auth/logout', {
+export async function logoutBackend(refreshToken: string) {
+  return backendFetch<void>('/auth/logout', {
     method: 'POST',
     body: { refresh_token: refreshToken, mode: 'json' },
   });
 }
 
-export async function getCurrentDirectusUser(accessToken: string) {
-  return directusFetch<DirectusUser>(
+export async function getCurrentBackendUser(accessToken: string) {
+  return backendFetch<AuthUser>(
     '/users/me?fields=id,email,first_name,last_name,role',
     { token: accessToken }
   );
 }
 
-export async function registerUserInDirectus(params: {
+export async function registerUserInBackend(params: {
   email: string;
   password: string;
   firstName: string;
   lastName?: string;
 }) {
   const adminToken = requireAdminToken();
-  const { defaultRoleId } = getDirectusConfig();
+  const { defaultRoleId } = getBackendConfig();
 
   const payload: Record<string, unknown> = {
     email: params.email,
@@ -171,11 +171,11 @@ export async function registerUserInDirectus(params: {
     status: 'active',
   };
 
-  if (defaultRoleId && !defaultRoleId.includes('YOUR_DIRECTUS_ROLE_UUID')) {
+  if (defaultRoleId && !defaultRoleId.includes('YOUR_BACKEND_ROLE_UUID')) {
     payload.role = defaultRoleId;
   }
 
-  return directusFetch<DirectusUser>('/users', {
+  return backendFetch<AuthUser>('/users', {
     method: 'POST',
     token: adminToken,
     body: payload,
@@ -185,14 +185,14 @@ export async function registerUserInDirectus(params: {
 // ---------------- Tenant-Scoped CRUD (User JWT) ----------------
 
 export async function listUserBots(accessToken: string): Promise<BotRecord[]> {
-  return directusFetch<BotRecord[]>(
+  return backendFetch<BotRecord[]>(
     '/items/bots?sort=-date_created&fields=id,name,bale_username,bot_token,webhook_secret,webhook_status,is_active,date_created,date_updated',
     { token: accessToken }
   );
 }
 
 export async function getUserBot(accessToken: string, botId: string): Promise<BotRecord> {
-  return directusFetch<BotRecord>(
+  return backendFetch<BotRecord>(
     `/items/bots/${encodeURIComponent(botId)}?fields=id,name,bale_username,bot_token,webhook_secret,webhook_status,is_active,date_created,date_updated`,
     { token: accessToken }
   );
@@ -209,7 +209,7 @@ export async function createUserBot(
     is_active?: boolean;
   }
 ): Promise<BotRecord> {
-  return directusFetch<BotRecord>('/items/bots', {
+  return backendFetch<BotRecord>('/items/bots', {
     method: 'POST',
     token: accessToken,
     body: data,
@@ -221,7 +221,7 @@ export async function updateUserBot(
   botId: string,
   patch: Partial<BotRecord>
 ): Promise<BotRecord> {
-  return directusFetch<BotRecord>(`/items/bots/${encodeURIComponent(botId)}`, {
+  return backendFetch<BotRecord>(`/items/bots/${encodeURIComponent(botId)}`, {
     method: 'PATCH',
     token: accessToken,
     body: patch,
@@ -229,14 +229,14 @@ export async function updateUserBot(
 }
 
 export async function deleteUserBot(accessToken: string, botId: string): Promise<void> {
-  return directusFetch<void>(`/items/bots/${encodeURIComponent(botId)}`, {
+  return backendFetch<void>(`/items/bots/${encodeURIComponent(botId)}`, {
     method: 'DELETE',
     token: accessToken,
   });
 }
 
 export async function listBotFlows(accessToken: string, botId: string): Promise<BotFlowRecord[]> {
-  return directusFetch<BotFlowRecord[]>(
+  return backendFetch<BotFlowRecord[]>(
     `/items/bot_flows?filter[bot_id][_eq]=${encodeURIComponent(botId)}&sort=-version,-date_updated`,
     { token: accessToken }
   );
@@ -252,7 +252,7 @@ export async function createBotFlow(
     flow_json: FlowDefinition;
   }
 ): Promise<BotFlowRecord> {
-  return directusFetch<BotFlowRecord>('/items/bot_flows', {
+  return backendFetch<BotFlowRecord>('/items/bot_flows', {
     method: 'POST',
     token: accessToken,
     body: data,
@@ -264,7 +264,7 @@ export async function updateBotFlow(
   flowId: string,
   patch: Partial<BotFlowRecord>
 ): Promise<BotFlowRecord> {
-  return directusFetch<BotFlowRecord>(`/items/bot_flows/${encodeURIComponent(flowId)}`, {
+  return backendFetch<BotFlowRecord>(`/items/bot_flows/${encodeURIComponent(flowId)}`, {
     method: 'PATCH',
     token: accessToken,
     body: patch,
@@ -275,14 +275,14 @@ export async function listCollectedForms(
   accessToken: string,
   botId: string
 ): Promise<CollectedFormRecord[]> {
-  return directusFetch<CollectedFormRecord[]>(
+  return backendFetch<CollectedFormRecord[]>(
     `/items/collected_form_data?filter[bot_id][_eq]=${encodeURIComponent(botId)}&sort=-date_created&limit=200`,
     { token: accessToken }
   );
 }
 
 export async function deleteCollectedForm(accessToken: string, recordId: string): Promise<void> {
-  return directusFetch<void>(`/items/collected_form_data/${encodeURIComponent(recordId)}`, {
+  return backendFetch<void>(`/items/collected_form_data/${encodeURIComponent(recordId)}`, {
     method: 'DELETE',
     token: accessToken,
   });
@@ -292,7 +292,7 @@ export async function listWebhookLogs(
   accessToken: string,
   botId: string
 ): Promise<WebhookLogRecord[]> {
-  return directusFetch<WebhookLogRecord[]>(
+  return backendFetch<WebhookLogRecord[]>(
     `/items/webhook_logs?filter[bot_id][_eq]=${encodeURIComponent(botId)}&sort=-date_created&limit=100`,
     { token: accessToken }
   );
@@ -302,7 +302,7 @@ export async function listBotSessions(
   accessToken: string,
   botId: string
 ): Promise<BotSessionRecord[]> {
-  return directusFetch<BotSessionRecord[]>(
+  return backendFetch<BotSessionRecord[]>(
     `/items/bot_sessions?filter[bot_id][_eq]=${encodeURIComponent(botId)}&sort=-last_interaction_at&limit=100`,
     { token: accessToken }
   );
@@ -312,7 +312,7 @@ export async function listBotContacts(
   accessToken: string,
   botId: string
 ): Promise<BotContactRecord[]> {
-  const rows = await directusFetch<BotContactRecord[]>(
+  const rows = await backendFetch<BotContactRecord[]>(
     `/items/bot_contacts?filter[bot_id][_eq]=${encodeURIComponent(botId)}&sort=-last_interaction_at,-date_created&limit=250`,
     { token: accessToken }
   );
@@ -335,7 +335,7 @@ export async function updateBotContact(
     >
   >
 ): Promise<BotContactRecord> {
-  return directusFetch<BotContactRecord>(`/items/bot_contacts/${encodeURIComponent(contactId)}`, {
+  return backendFetch<BotContactRecord>(`/items/bot_contacts/${encodeURIComponent(contactId)}`, {
     method: 'PATCH',
     token: accessToken,
     body: patch,
@@ -343,7 +343,7 @@ export async function updateBotContact(
 }
 
 export async function deleteBotContact(accessToken: string, contactId: string): Promise<void> {
-  return directusFetch<void>(`/items/bot_contacts/${encodeURIComponent(contactId)}`, {
+  return backendFetch<void>(`/items/bot_contacts/${encodeURIComponent(contactId)}`, {
     method: 'DELETE',
     token: accessToken,
   });
@@ -364,7 +364,7 @@ export async function listUserProducts(
   accessToken: string,
   botId: string
 ): Promise<ProductRecord[]> {
-  const rows = await directusFetch<ProductRecord[]>(
+  const rows = await backendFetch<ProductRecord[]>(
     `/items/products?filter[bot_id][_eq]=${encodeURIComponent(botId)}&sort=-date_created&limit=250`,
     { token: accessToken }
   );
@@ -384,7 +384,7 @@ export async function createUserProduct(
     is_active?: boolean;
   }
 ): Promise<ProductRecord> {
-  const created = await directusFetch<ProductRecord>('/items/products', {
+  const created = await backendFetch<ProductRecord>('/items/products', {
     method: 'POST',
     token: accessToken,
     body: {
@@ -410,7 +410,7 @@ export async function updateUserProduct(
   const cleanPatch: Record<string, unknown> = { ...patch };
   if (patch.price !== undefined) cleanPatch.price = Math.max(0, Math.round(Number(patch.price) || 0));
   if (patch.stock !== undefined) cleanPatch.stock = Math.max(0, Math.round(Number(patch.stock) || 0));
-  const updated = await directusFetch<ProductRecord>(
+  const updated = await backendFetch<ProductRecord>(
     `/items/products/${encodeURIComponent(productId)}`,
     {
       method: 'PATCH',
@@ -422,7 +422,7 @@ export async function updateUserProduct(
 }
 
 export async function deleteUserProduct(accessToken: string, productId: string): Promise<void> {
-  return directusFetch<void>(`/items/products/${encodeURIComponent(productId)}`, {
+  return backendFetch<void>(`/items/products/${encodeURIComponent(productId)}`, {
     method: 'DELETE',
     token: accessToken,
   });
@@ -431,6 +431,8 @@ export async function deleteUserProduct(accessToken: string, productId: string):
 function normalizeOrder(row: BotOrderRecord): BotOrderRecord {
   return {
     ...row,
+    bale_user_id: row.bale_user_id || row.bale_chat_id || null,
+    customer_name: row.customer_name || row.bale_user_name || null,
     items: Array.isArray(row.items) ? row.items : [],
     total_amount: Number(row.total_amount || 0),
     status: (row.status || 'pending') as OrderStatus,
@@ -438,7 +440,7 @@ function normalizeOrder(row: BotOrderRecord): BotOrderRecord {
 }
 
 export async function listBotOrders(accessToken: string, botId: string): Promise<BotOrderRecord[]> {
-  const rows = await directusFetch<BotOrderRecord[]>(
+  const rows = await backendFetch<BotOrderRecord[]>(
     `/items/bot_orders?filter[bot_id][_eq]=${encodeURIComponent(botId)}&sort=-date_created&limit=250`,
     { token: accessToken }
   );
@@ -450,7 +452,7 @@ export async function updateBotOrder(
   orderId: string,
   patch: Partial<Pick<BotOrderRecord, 'status' | 'note'>>
 ): Promise<BotOrderRecord> {
-  const updated = await directusFetch<BotOrderRecord>(
+  const updated = await backendFetch<BotOrderRecord>(
     `/items/bot_orders/${encodeURIComponent(orderId)}`,
     {
       method: 'PATCH',
@@ -462,7 +464,7 @@ export async function updateBotOrder(
 }
 
 export async function deleteBotOrder(accessToken: string, orderId: string): Promise<void> {
-  return directusFetch<void>(`/items/bot_orders/${encodeURIComponent(orderId)}`, {
+  return backendFetch<void>(`/items/bot_orders/${encodeURIComponent(orderId)}`, {
     method: 'DELETE',
     token: accessToken,
   });
@@ -480,7 +482,7 @@ function normalizeSurvey(row: SurveyRecord): SurveyRecord {
 }
 
 export async function listBotSurveys(accessToken: string, botId: string): Promise<SurveyRecord[]> {
-  const rows = await directusFetch<SurveyRecord[]>(
+  const rows = await backendFetch<SurveyRecord[]>(
     `/items/surveys?filter[bot_id][_eq]=${encodeURIComponent(botId)}&sort=-date_created&limit=100`,
     { token: accessToken }
   );
@@ -497,7 +499,7 @@ export async function createUserSurvey(
     allow_multiple?: boolean;
   }
 ): Promise<SurveyRecord> {
-  const created = await directusFetch<SurveyRecord>('/items/surveys', {
+  const created = await backendFetch<SurveyRecord>('/items/surveys', {
     method: 'POST',
     token: accessToken,
     body: {
@@ -513,7 +515,7 @@ export async function updateUserSurvey(
   surveyId: string,
   patch: Partial<Pick<SurveyRecord, 'title' | 'type' | 'questions_json' | 'allow_multiple'>>
 ): Promise<SurveyRecord> {
-  const updated = await directusFetch<SurveyRecord>(
+  const updated = await backendFetch<SurveyRecord>(
     `/items/surveys/${encodeURIComponent(surveyId)}`,
     {
       method: 'PATCH',
@@ -525,7 +527,7 @@ export async function updateUserSurvey(
 }
 
 export async function deleteUserSurvey(accessToken: string, surveyId: string): Promise<void> {
-  return directusFetch<void>(`/items/surveys/${encodeURIComponent(surveyId)}`, {
+  return backendFetch<void>(`/items/surveys/${encodeURIComponent(surveyId)}`, {
     method: 'DELETE',
     token: accessToken,
   });
@@ -535,7 +537,7 @@ export async function listSurveyResponses(
   accessToken: string,
   botId: string
 ): Promise<SurveyResponseRecord[]> {
-  const rows = await directusFetch<SurveyResponseRecord[]>(
+  const rows = await backendFetch<SurveyResponseRecord[]>(
     `/items/survey_responses?filter[bot_id][_eq]=${encodeURIComponent(botId)}&sort=-date_created&limit=500`,
     { token: accessToken }
   );
@@ -548,7 +550,7 @@ export async function listSurveyResponses(
 }
 
 export async function deleteSurveyResponse(accessToken: string, responseId: string): Promise<void> {
-  return directusFetch<void>(`/items/survey_responses/${encodeURIComponent(responseId)}`, {
+  return backendFetch<void>(`/items/survey_responses/${encodeURIComponent(responseId)}`, {
     method: 'DELETE',
     token: accessToken,
   });
@@ -608,7 +610,7 @@ export async function listBookingServices(
   accessToken: string,
   botId: string
 ): Promise<BookingServiceRecord[]> {
-  const rows = await directusFetch<BookingServiceRecord[]>(
+  const rows = await backendFetch<BookingServiceRecord[]>(
     `/items/booking_services?filter[bot_id][_eq]=${encodeURIComponent(botId)}&limit=100`,
     { token: accessToken }
   );
@@ -627,7 +629,7 @@ export async function createBookingService(
     is_active?: boolean;
   }
 ): Promise<BookingServiceRecord> {
-  const created = await directusFetch<BookingServiceRecord>('/items/booking_services', {
+  const created = await backendFetch<BookingServiceRecord>('/items/booking_services', {
     method: 'POST',
     token: accessToken,
     body: {
@@ -651,7 +653,7 @@ export async function updateBookingService(
     >
   >
 ): Promise<BookingServiceRecord> {
-  const updated = await directusFetch<BookingServiceRecord>(
+  const updated = await backendFetch<BookingServiceRecord>(
     `/items/booking_services/${encodeURIComponent(serviceId)}`,
     {
       method: 'PATCH',
@@ -663,7 +665,7 @@ export async function updateBookingService(
 }
 
 export async function deleteBookingService(accessToken: string, serviceId: string): Promise<void> {
-  return directusFetch<void>(`/items/booking_services/${encodeURIComponent(serviceId)}`, {
+  return backendFetch<void>(`/items/booking_services/${encodeURIComponent(serviceId)}`, {
     method: 'DELETE',
     token: accessToken,
   });
@@ -673,7 +675,7 @@ export async function listBookingSchedules(
   accessToken: string,
   botId: string
 ): Promise<BookingScheduleRecord[]> {
-  const rows = await directusFetch<BookingScheduleRecord[]>(
+  const rows = await backendFetch<BookingScheduleRecord[]>(
     `/items/booking_schedules?filter[bot_id][_eq]=${encodeURIComponent(botId)}&sort=weekday,start_time&limit=250`,
     { token: accessToken }
   );
@@ -692,7 +694,7 @@ export async function createBookingSchedule(
     is_active?: boolean;
   }
 ): Promise<BookingScheduleRecord> {
-  const created = await directusFetch<BookingScheduleRecord>('/items/booking_schedules', {
+  const created = await backendFetch<BookingScheduleRecord>('/items/booking_schedules', {
     method: 'POST',
     token: accessToken,
     body: {
@@ -712,7 +714,7 @@ export async function updateBookingSchedule(
     Pick<BookingScheduleRecord, 'weekday' | 'start_time' | 'end_time' | 'blocked_dates' | 'is_active'>
   >
 ): Promise<BookingScheduleRecord> {
-  const updated = await directusFetch<BookingScheduleRecord>(
+  const updated = await backendFetch<BookingScheduleRecord>(
     `/items/booking_schedules/${encodeURIComponent(scheduleId)}`,
     {
       method: 'PATCH',
@@ -727,7 +729,7 @@ export async function deleteBookingSchedule(
   accessToken: string,
   scheduleId: string
 ): Promise<void> {
-  return directusFetch<void>(`/items/booking_schedules/${encodeURIComponent(scheduleId)}`, {
+  return backendFetch<void>(`/items/booking_schedules/${encodeURIComponent(scheduleId)}`, {
     method: 'DELETE',
     token: accessToken,
   });
@@ -737,7 +739,7 @@ export async function listAppointments(
   accessToken: string,
   botId: string
 ): Promise<AppointmentRecord[]> {
-  const rows = await directusFetch<AppointmentRecord[]>(
+  const rows = await backendFetch<AppointmentRecord[]>(
     `/items/appointments?filter[bot_id][_eq]=${encodeURIComponent(botId)}&sort=-appointment_at&limit=300`,
     { token: accessToken }
   );
@@ -749,7 +751,7 @@ export async function updateAppointment(
   appointmentId: string,
   patch: Partial<Pick<AppointmentRecord, 'status' | 'note' | 'reminder_sent'>>
 ): Promise<AppointmentRecord> {
-  const updated = await directusFetch<AppointmentRecord>(
+  const updated = await backendFetch<AppointmentRecord>(
     `/items/appointments/${encodeURIComponent(appointmentId)}`,
     {
       method: 'PATCH',
@@ -764,7 +766,7 @@ export async function deleteAppointment(
   accessToken: string,
   appointmentId: string
 ): Promise<void> {
-  return directusFetch<void>(`/items/appointments/${encodeURIComponent(appointmentId)}`, {
+  return backendFetch<void>(`/items/appointments/${encodeURIComponent(appointmentId)}`, {
     method: 'DELETE',
     token: accessToken,
   });
@@ -776,7 +778,7 @@ export async function listBroadcastCampaigns(
   accessToken: string,
   botId: string
 ): Promise<BroadcastCampaignRecord[]> {
-  const rows = await directusFetch<BroadcastCampaignRecord[]>(
+  const rows = await backendFetch<BroadcastCampaignRecord[]>(
     `/items/broadcast_campaigns?filter[bot_id][_eq]=${encodeURIComponent(botId)}&limit=100`,
     { token: accessToken }
   );
@@ -795,7 +797,7 @@ export async function createBroadcastCampaign(
     status?: BroadcastCampaignStatus;
   }
 ): Promise<BroadcastCampaignRecord> {
-  const created = await directusFetch<BroadcastCampaignRecord>('/items/broadcast_campaigns', {
+  const created = await backendFetch<BroadcastCampaignRecord>('/items/broadcast_campaigns', {
     method: 'POST',
     token: accessToken,
     body: {
@@ -824,7 +826,7 @@ export async function updateBroadcastCampaign(
     >
   >
 ): Promise<BroadcastCampaignRecord> {
-  const updated = await directusFetch<BroadcastCampaignRecord>(
+  const updated = await backendFetch<BroadcastCampaignRecord>(
     `/items/broadcast_campaigns/${encodeURIComponent(campaignId)}`,
     {
       method: 'PATCH',
@@ -839,7 +841,7 @@ export async function deleteBroadcastCampaign(
   accessToken: string,
   campaignId: string
 ): Promise<void> {
-  return directusFetch<void>(`/items/broadcast_campaigns/${encodeURIComponent(campaignId)}`, {
+  return backendFetch<void>(`/items/broadcast_campaigns/${encodeURIComponent(campaignId)}`, {
     method: 'DELETE',
     token: accessToken,
   });
@@ -849,7 +851,7 @@ export async function deleteBroadcastCampaign(
 
 export async function findBotByWebhookSecret(webhookSecret: string): Promise<BotRecord | null> {
   const adminToken = requireAdminToken();
-  const bots = await directusFetch<BotRecord[]>(
+  const bots = await backendFetch<BotRecord[]>(
     `/items/bots?filter[webhook_secret][_eq]=${encodeURIComponent(webhookSecret)}&limit=1`,
     { token: adminToken }
   );
@@ -858,29 +860,29 @@ export async function findBotByWebhookSecret(webhookSecret: string): Promise<Bot
 
 export async function findPublishedFlowForBot(botId: string): Promise<BotFlowRecord | null> {
   const adminToken = requireAdminToken();
-  const flows = await directusFetch<BotFlowRecord[]>(
+  const flows = await backendFetch<BotFlowRecord[]>(
     `/items/bot_flows?filter[bot_id][_eq]=${encodeURIComponent(botId)}&filter[is_published][_eq]=true&sort=-version,-date_updated&limit=1`,
     { token: adminToken }
   );
   return flows[0] ?? null;
 }
 
-export async function findSessionInDirectus(
+export async function findSessionInBackend(
   botId: string,
   baleChatId: string
 ): Promise<BotSessionRecord | null> {
   const adminToken = requireAdminToken();
-  const rows = await directusFetch<BotSessionRecord[]>(
+  const rows = await backendFetch<BotSessionRecord[]>(
     `/items/bot_sessions?filter[bot_id][_eq]=${encodeURIComponent(botId)}&filter[bale_chat_id][_eq]=${encodeURIComponent(baleChatId)}&limit=1`,
     { token: adminToken }
   );
   return rows[0] ?? null;
 }
 
-export async function saveSessionInDirectus(session: BotSessionRecord): Promise<BotSessionRecord> {
+export async function saveSessionInBackend(session: BotSessionRecord): Promise<BotSessionRecord> {
   const adminToken = requireAdminToken();
   if (session.id) {
-    return directusFetch<BotSessionRecord>(`/items/bot_sessions/${encodeURIComponent(session.id)}`, {
+    return backendFetch<BotSessionRecord>(`/items/bot_sessions/${encodeURIComponent(session.id)}`, {
       method: 'PATCH',
       token: adminToken,
       body: {
@@ -892,7 +894,7 @@ export async function saveSessionInDirectus(session: BotSessionRecord): Promise<
       },
     });
   }
-  return directusFetch<BotSessionRecord>('/items/bot_sessions', {
+  return backendFetch<BotSessionRecord>('/items/bot_sessions', {
     method: 'POST',
     token: adminToken,
     body: session,
@@ -904,7 +906,7 @@ export async function findBotContactAsAdmin(
   baleUserId: string
 ): Promise<BotContactRecord | null> {
   const adminToken = requireAdminToken();
-  const rows = await directusFetch<BotContactRecord[]>(
+  const rows = await backendFetch<BotContactRecord[]>(
     `/items/bot_contacts?filter[bot_id][_eq]=${encodeURIComponent(botId)}&filter[bale_user_id][_eq]=${encodeURIComponent(baleUserId)}&limit=1`,
     { token: adminToken }
   );
@@ -965,7 +967,7 @@ export async function upsertBotContactAsAdmin(data: {
       patch.is_blocked = data.is_blocked;
     }
 
-    return directusFetch<BotContactRecord>(
+    return backendFetch<BotContactRecord>(
       `/items/bot_contacts/${encodeURIComponent(existing.id)}`,
       {
         method: 'PATCH',
@@ -975,7 +977,7 @@ export async function upsertBotContactAsAdmin(data: {
     );
   }
 
-  return directusFetch<BotContactRecord>('/items/bot_contacts', {
+  return backendFetch<BotContactRecord>('/items/bot_contacts', {
     method: 'POST',
     token: adminToken,
     body: {
@@ -1004,7 +1006,7 @@ export async function createCollectedFormAsAdmin(data: {
   payload: Record<string, string>;
 }): Promise<CollectedFormRecord> {
   const adminToken = requireAdminToken();
-  return directusFetch<CollectedFormRecord>('/items/collected_form_data', {
+  return backendFetch<CollectedFormRecord>('/items/collected_form_data', {
     method: 'POST',
     token: adminToken,
     body: data,
@@ -1023,7 +1025,7 @@ export async function createWebhookLogAsAdmin(data: {
   error_message?: string | null;
 }): Promise<WebhookLogRecord> {
   const adminToken = requireAdminToken();
-  return directusFetch<WebhookLogRecord>('/items/webhook_logs', {
+  return backendFetch<WebhookLogRecord>('/items/webhook_logs', {
     method: 'POST',
     token: adminToken,
     body: data,
@@ -1032,7 +1034,7 @@ export async function createWebhookLogAsAdmin(data: {
 
 export async function listProductsAsAdmin(botId: string): Promise<ProductRecord[]> {
   const adminToken = requireAdminToken();
-  const rows = await directusFetch<ProductRecord[]>(
+  const rows = await backendFetch<ProductRecord[]>(
     `/items/products?filter[bot_id][_eq]=${encodeURIComponent(botId)}&filter[is_active][_eq]=true&sort=-date_created&limit=200`,
     { token: adminToken }
   );
@@ -1052,7 +1054,7 @@ export async function createBotOrderAsAdmin(data: {
   note?: string | null;
 }): Promise<BotOrderRecord> {
   const adminToken = requireAdminToken();
-  const created = await directusFetch<BotOrderRecord>('/items/bot_orders', {
+  const created = await backendFetch<BotOrderRecord>('/items/bot_orders', {
     method: 'POST',
     token: adminToken,
     body: {
@@ -1074,7 +1076,7 @@ export async function createBotOrderAsAdmin(data: {
 export async function getSurveyAsAdmin(surveyId: string): Promise<SurveyRecord | null> {
   const adminToken = requireAdminToken();
   try {
-    const row = await directusFetch<SurveyRecord>(
+    const row = await backendFetch<SurveyRecord>(
       `/items/surveys/${encodeURIComponent(surveyId)}`,
       { token: adminToken }
     );
@@ -1091,7 +1093,7 @@ export async function hasContactAnsweredSurveyAsAdmin(
 ): Promise<boolean> {
   const adminToken = requireAdminToken();
   try {
-    const rows = await directusFetch<Array<{ id: string }>>(
+    const rows = await backendFetch<Array<{ id: string }>>(
       `/items/survey_responses?filter[bot_id][_eq]=${encodeURIComponent(botId)}&filter[survey_id][_eq]=${encodeURIComponent(surveyId)}&filter[bale_chat_id][_eq]=${encodeURIComponent(baleChatOrUserId)}&limit=1&fields=id`,
       { token: adminToken }
     );
@@ -1112,7 +1114,7 @@ export async function createSurveyResponseAsAdmin(data: {
   score?: number | null;
 }): Promise<SurveyResponseRecord> {
   const adminToken = requireAdminToken();
-  return directusFetch<SurveyResponseRecord>('/items/survey_responses', {
+  return backendFetch<SurveyResponseRecord>('/items/survey_responses', {
     method: 'POST',
     token: adminToken,
     body: {
@@ -1134,7 +1136,7 @@ export async function createSurveyResponseAsAdmin(data: {
 export async function getBotAsAdmin(botId: string): Promise<BotRecord | null> {
   const adminToken = requireAdminToken();
   try {
-    return await directusFetch<BotRecord>(`/items/bots/${encodeURIComponent(botId)}`, {
+    return await backendFetch<BotRecord>(`/items/bots/${encodeURIComponent(botId)}`, {
       token: adminToken,
     });
   } catch {
@@ -1144,7 +1146,7 @@ export async function getBotAsAdmin(botId: string): Promise<BotRecord | null> {
 
 export async function listBookingServicesAsAdmin(botId: string): Promise<BookingServiceRecord[]> {
   const adminToken = requireAdminToken();
-  const rows = await directusFetch<BookingServiceRecord[]>(
+  const rows = await backendFetch<BookingServiceRecord[]>(
     `/items/booking_services?filter[bot_id][_eq]=${encodeURIComponent(botId)}&filter[is_active][_eq]=true&limit=100`,
     { token: adminToken }
   );
@@ -1159,7 +1161,7 @@ export async function listBookingSchedulesAsAdmin(
   const serviceFilter = serviceId
     ? `&filter[service_id][_eq]=${encodeURIComponent(serviceId)}`
     : '';
-  const rows = await directusFetch<BookingScheduleRecord[]>(
+  const rows = await backendFetch<BookingScheduleRecord[]>(
     `/items/booking_schedules?filter[bot_id][_eq]=${encodeURIComponent(botId)}${serviceFilter}&filter[is_active][_eq]=true&limit=250`,
     { token: adminToken }
   );
@@ -1174,7 +1176,7 @@ export async function listAppointmentsAsAdmin(
   const serviceFilter = serviceId
     ? `&filter[service_id][_eq]=${encodeURIComponent(serviceId)}`
     : '';
-  const rows = await directusFetch<AppointmentRecord[]>(
+  const rows = await backendFetch<AppointmentRecord[]>(
     `/items/appointments?filter[bot_id][_eq]=${encodeURIComponent(botId)}${serviceFilter}&filter[status][_neq]=cancelled&limit=500`,
     { token: adminToken }
   );
@@ -1195,7 +1197,7 @@ export async function createAppointmentAsAdmin(data: {
   note?: string | null;
 }): Promise<AppointmentRecord> {
   const adminToken = requireAdminToken();
-  const created = await directusFetch<AppointmentRecord>('/items/appointments', {
+  const created = await backendFetch<AppointmentRecord>('/items/appointments', {
     method: 'POST',
     token: adminToken,
     body: {
@@ -1222,7 +1224,7 @@ export async function getAppointmentAsAdmin(
 ): Promise<AppointmentRecord | null> {
   const adminToken = requireAdminToken();
   try {
-    const row = await directusFetch<AppointmentRecord>(
+    const row = await backendFetch<AppointmentRecord>(
       `/items/appointments/${encodeURIComponent(appointmentId)}`,
       { token: adminToken }
     );
@@ -1237,7 +1239,7 @@ export async function updateAppointmentAsAdmin(
   patch: Partial<Pick<AppointmentRecord, 'status' | 'reminder_sent' | 'note'>>
 ): Promise<AppointmentRecord> {
   const adminToken = requireAdminToken();
-  const updated = await directusFetch<AppointmentRecord>(
+  const updated = await backendFetch<AppointmentRecord>(
     `/items/appointments/${encodeURIComponent(appointmentId)}`,
     {
       method: 'PATCH',
@@ -1255,7 +1257,7 @@ export async function listDueReminderAppointmentsAsAdmin(
 ): Promise<AppointmentRecord[]> {
   const adminToken = requireAdminToken();
   const botFilter = botId ? `&filter[bot_id][_eq]=${encodeURIComponent(botId)}` : '';
-  const rows = await directusFetch<AppointmentRecord[]>(
+  const rows = await backendFetch<AppointmentRecord[]>(
     `/items/appointments?filter[reminder_sent][_eq]=false&filter[status][_neq]=cancelled&filter[appointment_at][_gte]=${encodeURIComponent(fromIso)}&filter[appointment_at][_lte]=${encodeURIComponent(toIso)}${botFilter}&limit=200`,
     { token: adminToken }
   );
@@ -1264,7 +1266,7 @@ export async function listDueReminderAppointmentsAsAdmin(
 
 export async function listBotContactsAsAdmin(botId: string): Promise<BotContactRecord[]> {
   const adminToken = requireAdminToken();
-  const rows = await directusFetch<BotContactRecord[]>(
+  const rows = await backendFetch<BotContactRecord[]>(
     `/items/bot_contacts?filter[bot_id][_eq]=${encodeURIComponent(botId)}&limit=5000`,
     { token: adminToken }
   );
@@ -1278,7 +1280,7 @@ export async function listBotContactsAsAdmin(botId: string): Promise<BotContactR
 
 export async function markContactBlockedAsAdmin(contactId: string | number): Promise<void> {
   const adminToken = requireAdminToken();
-  await directusFetch<unknown>(`/items/bot_contacts/${encodeURIComponent(String(contactId))}`, {
+  await backendFetch<unknown>(`/items/bot_contacts/${encodeURIComponent(String(contactId))}`, {
     method: 'PATCH',
     token: adminToken,
     body: { is_blocked: true },
@@ -1290,7 +1292,7 @@ export async function getCampaignAsAdmin(
 ): Promise<BroadcastCampaignRecord | null> {
   const adminToken = requireAdminToken();
   try {
-    const row = await directusFetch<BroadcastCampaignRecord>(
+    const row = await backendFetch<BroadcastCampaignRecord>(
       `/items/broadcast_campaigns/${encodeURIComponent(campaignId)}`,
       { token: adminToken }
     );
@@ -1310,7 +1312,7 @@ export async function updateCampaignAsAdmin(
   >
 ): Promise<BroadcastCampaignRecord> {
   const adminToken = requireAdminToken();
-  const updated = await directusFetch<BroadcastCampaignRecord>(
+  const updated = await backendFetch<BroadcastCampaignRecord>(
     `/items/broadcast_campaigns/${encodeURIComponent(campaignId)}`,
     {
       method: 'PATCH',
@@ -1325,7 +1327,7 @@ export async function listDueScheduledCampaignsAsAdmin(
   nowIso: string
 ): Promise<BroadcastCampaignRecord[]> {
   const adminToken = requireAdminToken();
-  const rows = await directusFetch<BroadcastCampaignRecord[]>(
+  const rows = await backendFetch<BroadcastCampaignRecord[]>(
     `/items/broadcast_campaigns?filter[status][_eq]=queued&filter[scheduled_at][_lte]=${encodeURIComponent(nowIso)}&limit=25`,
     { token: adminToken }
   );

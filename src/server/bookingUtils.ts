@@ -67,7 +67,7 @@ export function computeAvailableBookingDays(params: {
   const { service, schedules, appointments, now = new Date() } = params;
   if (!service.is_active) return [];
 
-  const daysAhead = Math.min(Math.max(Number(params.daysAhead || 7), 1), 21);
+  const daysAhead = Math.min(Math.max(Number(params.daysAhead || 7), 1), 30);
   const duration = Math.max(Number(service.duration_minutes || 30), 5);
   const capacity = Math.max(Number(service.capacity_per_slot || 1), 1);
 

@@ -1,10 +1,9 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
   BarChart3,
   Bot,
   CalendarCheck,
-  Database,
   FileSpreadsheet,
   LogOut,
   Megaphone,
@@ -19,13 +18,13 @@ import { BroadcastView } from './components/BroadcastView.tsx';
 import { CatalogOrdersView } from './components/CatalogOrdersView.tsx';
 import { CollectedFormsView } from './components/CollectedFormsView.tsx';
 import { ContactsView } from './components/ContactsView.tsx';
-import { DirectusSchemaView } from './components/DirectusSchemaView.tsx';
 import { FlowBuilderView } from './components/FlowBuilderView.tsx';
 import { SurveysView } from './components/SurveysView.tsx';
 import { WebhookLogsView } from './components/WebhookLogsView.tsx';
 import { api, ApiError, type AuthResponse, type HealthResponse } from './lib/api.ts';
 import type {
   AppointmentRecord,
+  AuthUser,
   BookingScheduleRecord,
   BookingServiceRecord,
   BotContactRecord,
@@ -35,7 +34,6 @@ import type {
   BotSessionRecord,
   BroadcastCampaignRecord,
   CollectedFormRecord,
-  DirectusUser,
   FlowDefinition,
   ProductRecord,
   SurveyRecord,
@@ -52,10 +50,9 @@ type NavTab =
   | 'broadcast'
   | 'surveys'
   | 'forms'
-  | 'logs'
-  | 'schema';
+  | 'logs';
 
-const AUTH_STORAGE_KEY = 'balesaz_directus_session';
+const AUTH_STORAGE_KEY = 'balesaz_auth_session';
 
 const EMPTY_FLOW: FlowDefinition = {
   startNodeId: 'node_start',
@@ -87,14 +84,13 @@ const TAB_TITLES: Record<NavTab, string> = {
   surveys: 'نظرسنجی‌ها و تحلیل رضایت',
   forms: 'داده‌های فرم‌های جمع‌آوری‌شده',
   logs: 'گزارش وب‌هوک‌ها و نشست‌ها',
-  schema: 'راهنمای دیتابیس دایرکتوس',
 };
 
 export default function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [refreshToken, setRefreshToken] = useState<string | null>(null);
-  const [user, setUser] = useState<DirectusUser | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
   const [previewMode, setPreviewMode] = useState(false);
   const [initializing, setInitializing] = useState(true);
 
@@ -129,6 +125,8 @@ export default function App() {
   const [loadingBotData, setLoadingBotData] = useState(false);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  const toastTimerRef = useRef<number | null>(null);
+
   const selectedBot = useMemo(
     () => bots.find((b) => b.id === selectedBotId) || null,
     [bots, selectedBotId]
@@ -136,10 +134,24 @@ export default function App() {
 
   const showToast = useCallback((type: 'success' | 'error', text: string) => {
     setToast({ type, text });
-    setTimeout(() => setToast(null), 3500);
+    if (toastTimerRef.current !== null) {
+      window.clearTimeout(toastTimerRef.current);
+    }
+    toastTimerRef.current = window.setTimeout(() => {
+      setToast(null);
+      toastTimerRef.current = null;
+    }, 3500);
   }, []);
 
-  // Load initial health, default flow, and stored Directus session
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current !== null) {
+        window.clearTimeout(toastTimerRef.current);
+      }
+    };
+  }, []);
+
+  // Load initial health, default flow, and stored auth session
   useEffect(() => {
     let cancelled = false;
 
@@ -159,7 +171,7 @@ export default function App() {
           const parsed = JSON.parse(rawSaved) as {
             access_token?: string;
             refresh_token?: string;
-            user?: DirectusUser;
+            user?: AuthUser;
           };
           if (parsed.access_token) {
             try {
@@ -256,7 +268,7 @@ export default function App() {
           setContactsError(
             err instanceof ApiError
               ? err.message
-              : 'کالکشن bot_contacts هنوز در دایرکتوس ساخته نشده یا دسترسی آن تنظیم نشده است.'
+              : 'مجموعه bot_contacts در سرور پایگاه داده ساخته نشده یا دسترسی آن تنظیم نشده است.'
           );
           return { contacts: [] as BotContactRecord[] };
         }),
@@ -264,7 +276,7 @@ export default function App() {
           setCatalogError(
             err instanceof ApiError
               ? err.message
-              : 'کالکشن‌های products یا bot_orders هنوز در دایرکتوس ساخته نشده یا دسترسی آن‌ها تنظیم نشده است.'
+              : 'مجموعه‌های products یا bot_orders در سرور پایگاه داده ساخته نشده یا دسترسی آن‌ها تنظیم نشده است.'
           );
           return { products: [] as ProductRecord[] };
         }),
@@ -273,7 +285,7 @@ export default function App() {
             prev ||
             (err instanceof ApiError
               ? err.message
-              : 'کالکشن‌های products یا bot_orders هنوز در دایرکتوس ساخته نشده یا دسترسی آن‌ها تنظیم نشده است.')
+              : 'مجموعه‌های products یا bot_orders در سرور پایگاه داده ساخته نشده یا دسترسی آن‌ها تنظیم نشده است.')
           );
           return { orders: [] as BotOrderRecord[] };
         }),
@@ -281,7 +293,7 @@ export default function App() {
           setSurveysError(
             err instanceof ApiError
               ? err.message
-              : 'کالکشن‌های surveys یا survey_responses هنوز در دایرکتوس ساخته نشده یا دسترسی آن‌ها تنظیم نشده است.'
+              : 'مجموعه‌های surveys یا survey_responses در سرور پایگاه داده ساخته نشده یا دسترسی آن‌ها تنظیم نشده است.'
           );
           return { surveys: [] as SurveyRecord[] };
         }),
@@ -290,7 +302,7 @@ export default function App() {
             prev ||
             (err instanceof ApiError
               ? err.message
-              : 'کالکشن‌های surveys یا survey_responses هنوز در دایرکتوس ساخته نشده یا دسترسی آن‌ها تنظیم نشده است.')
+              : 'مجموعه‌های surveys یا survey_responses در سرور پایگاه داده ساخته نشده یا دسترسی آن‌ها تنظیم نشده است.')
           );
           return { responses: [] as SurveyResponseRecord[] };
         }),
@@ -298,7 +310,7 @@ export default function App() {
           setBookingError(
             err instanceof ApiError
               ? err.message
-              : 'کالکشن‌های نوبت‌دهی (booking_services / booking_schedules / appointments) هنوز در دایرکتوس ساخته نشده‌اند.'
+              : 'مجموعه‌های نوبت‌دهی (booking_services / booking_schedules / appointments) در سرور پایگاه داده ساخته نشده‌اند.'
           );
           return { services: [] as BookingServiceRecord[] };
         }),
@@ -307,7 +319,7 @@ export default function App() {
             prev ||
             (err instanceof ApiError
               ? err.message
-              : 'کالکشن‌های نوبت‌دهی هنوز در دایرکتوس ساخته نشده‌اند.')
+              : 'مجموعه‌های نوبت‌دهی در سرور پایگاه داده ساخته نشده‌اند.')
           );
           return { schedules: [] as BookingScheduleRecord[] };
         }),
@@ -316,7 +328,7 @@ export default function App() {
             prev ||
             (err instanceof ApiError
               ? err.message
-              : 'کالکشن appointments هنوز در دایرکتوس ساخته نشده یا دسترسی آن تنظیم نشده است.')
+              : 'مجموعه appointments در سرور پایگاه داده ساخته نشده یا دسترسی آن تنظیم نشده است.')
           );
           return { appointments: [] as AppointmentRecord[] };
         }),
@@ -324,7 +336,7 @@ export default function App() {
           setBroadcastError(
             err instanceof ApiError
               ? err.message
-              : 'کالکشن broadcast_campaigns هنوز در دایرکتوس ساخته نشده یا دسترسی آن تنظیم نشده است.'
+              : 'مجموعه broadcast_campaigns در سرور پایگاه داده ساخته نشده یا دسترسی آن تنظیم نشده است.'
           );
           return { campaigns: [] as BroadcastCampaignRecord[] };
         }),
@@ -433,7 +445,7 @@ export default function App() {
         'success',
         options?.saveAsNewVersion
           ? `نسخه جدید (${res.flow.version}) با موفقیت ذخیره و منتشر شد.`
-          : 'جریان گفتگو با موفقیت در دایرکتوس ذخیره و منتشر شد.'
+          : 'جریان گفتگو با موفقیت ذخیره و منتشر شد.'
       );
     } catch (err) {
       showToast('error', err instanceof ApiError ? err.message : 'ذخیره جریان ناموفق بود.');
@@ -496,7 +508,6 @@ export default function App() {
     { id: 'surveys', label: 'نظرسنجی و آمار', icon: <BarChart3 className="w-4 h-4" /> },
     { id: 'forms', label: 'داده‌های فرم‌ها', icon: <FileSpreadsheet className="w-4 h-4" /> },
     { id: 'logs', label: 'گزارش وب‌هوک‌ها', icon: <Activity className="w-4 h-4" /> },
-    { id: 'schema', label: 'راهنمای دایرکتوس', icon: <Database className="w-4 h-4" /> },
   ];
 
   const userDisplayName = user
@@ -512,7 +523,7 @@ export default function App() {
             <div className="w-8 h-8 rounded-lg bg-emerald-700 text-white flex items-center justify-center shrink-0">
               <Bot className="w-4 h-4" />
             </div>
-            <span className="text-base font-bold text-slate-900 whitespace-nowrap">بله‌ساز</span>
+            <span className="text-base font-bold text-slate-900 whitespace-nowrap">بات‌روم</span>
           </div>
 
           {bots.length > 0 && (
@@ -562,7 +573,7 @@ export default function App() {
           <div className="min-w-0">
             <p className="text-xs font-semibold text-slate-900 truncate">{userDisplayName}</p>
             <p className="text-[11px] text-slate-500 truncate">
-              {user ? user.email : 'بدون اتصال دایرکتوس'}
+              {user ? user.email : 'بدون ورود به حساب کاربری'}
             </p>
           </div>
           {token ? (
@@ -608,7 +619,7 @@ export default function App() {
                 onClick={() => setPreviewMode(false)}
                 className="px-4 py-2 text-xs font-medium text-white bg-emerald-700 hover:bg-emerald-800 rounded-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
               >
-                ورود به حساب دایرکتوس
+                ورود به حساب کاربری
               </button>
             )}
           </div>
@@ -670,15 +681,8 @@ export default function App() {
           {activeTab === 'contacts' && (
             <div className="space-y-4">
               {contactsError && (
-                <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 flex flex-wrap items-center justify-between gap-3">
+                <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900">
                   <span>{contactsError}</span>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('schema')}
-                    className="px-3 py-1.5 bg-white border border-amber-300 rounded-lg text-amber-900 font-medium hover:bg-amber-100/60 cursor-pointer"
-                  >
-                    مشاهده راهنمای ساخت کالکشن
-                  </button>
                 </div>
               )}
               <ContactsView
@@ -694,15 +698,8 @@ export default function App() {
           {activeTab === 'booking' && (
             <div className="space-y-4">
               {bookingError && (
-                <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 flex flex-wrap items-center justify-between gap-3">
+                <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900">
                   <span>{bookingError}</span>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('schema')}
-                    className="px-3 py-1.5 bg-white border border-amber-300 rounded-lg text-amber-900 font-medium hover:bg-amber-100/60 cursor-pointer"
-                  >
-                    مشاهده راهنمای ساخت کالکشن‌های فاز ۴
-                  </button>
                 </div>
               )}
               <BookingView
@@ -722,15 +719,8 @@ export default function App() {
           {activeTab === 'catalog' && (
             <div className="space-y-4">
               {catalogError && (
-                <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 flex flex-wrap items-center justify-between gap-3">
+                <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900">
                   <span>{catalogError}</span>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('schema')}
-                    className="px-3 py-1.5 bg-white border border-amber-300 rounded-lg text-amber-900 font-medium hover:bg-amber-100/60 cursor-pointer"
-                  >
-                    مشاهده راهنمای ساخت کالکشن‌های فاز ۳
-                  </button>
                 </div>
               )}
               <CatalogOrdersView
@@ -748,15 +738,8 @@ export default function App() {
           {activeTab === 'broadcast' && (
             <div className="space-y-4">
               {broadcastError && (
-                <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 flex flex-wrap items-center justify-between gap-3">
+                <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900">
                   <span>{broadcastError}</span>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('schema')}
-                    className="px-3 py-1.5 bg-white border border-amber-300 rounded-lg text-amber-900 font-medium hover:bg-amber-100/60 cursor-pointer"
-                  >
-                    مشاهده راهنمای ساخت کالکشن‌های فاز ۴
-                  </button>
                 </div>
               )}
               <BroadcastView
@@ -773,15 +756,8 @@ export default function App() {
           {activeTab === 'surveys' && (
             <div className="space-y-4">
               {surveysError && (
-                <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900 flex flex-wrap items-center justify-between gap-3">
+                <div className="p-4 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-900">
                   <span>{surveysError}</span>
-                  <button
-                    type="button"
-                    onClick={() => setActiveTab('schema')}
-                    className="px-3 py-1.5 bg-white border border-amber-300 rounded-lg text-amber-900 font-medium hover:bg-amber-100/60 cursor-pointer"
-                  >
-                    مشاهده راهنمای ساخت کالکشن‌های فاز ۳
-                  </button>
                 </div>
               )}
               <SurveysView
@@ -815,8 +791,6 @@ export default function App() {
               onRefresh={loadSelectedBotDetails}
             />
           )}
-
-          {activeTab === 'schema' && <DirectusSchemaView />}
         </main>
       </div>
     </div>

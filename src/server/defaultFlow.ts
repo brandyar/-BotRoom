@@ -93,7 +93,7 @@ const RAW_DEFAULT_FLOW: FlowDefinition = {
     {
       id: 'node_save',
       type: 'save_form',
-      title: 'ثبت نهایی در دایرکتوس',
+      title: 'ثبت نهایی اطلاعات فرم',
       formTitle: 'فرم درخواست مشاوره',
       messageText: 'درخواست شما با موفقیت ثبت شد!\nنام: {{form.full_name}}\nتماس: {{form.phone}}\nموضوع: {{form.topic}}\nهمکاران ما به‌زودی با شما تماس می‌گیرند.',
     },

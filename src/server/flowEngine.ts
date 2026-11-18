@@ -29,7 +29,7 @@ import {
   createCollectedFormAsAdmin,
   createSurveyResponseAsAdmin,
   getAppointmentAsAdmin,
-  getDirectusConfig,
+  getBackendConfig,
   getSurveyAsAdmin,
   hasContactAnsweredSurveyAsAdmin,
   listAppointmentsAsAdmin,
@@ -38,7 +38,7 @@ import {
   listProductsAsAdmin,
   updateAppointmentAsAdmin,
   upsertBotContactAsAdmin,
-} from './directus.ts';
+} from './backend.ts';
 import { getOrInitSession, persistSession } from './sessionStore.ts';
 
 export interface FlowExecutionResult {
@@ -878,18 +878,18 @@ export async function executeBotFlow(params: {
     chatId,
     userId,
     userName: userFullName,
-    persistToDirectus: !dryRun,
+    persistToBackend: !dryRun,
   });
 
   if (dryRun && simulatedTags) {
     saveSessionTags(session, simulatedTags);
   }
 
-  const { isConfigured, hasAdminToken } = getDirectusConfig();
-  const canPersistDirectus = !dryRun && isConfigured && hasAdminToken;
+  const { isConfigured, hasAdminToken } = getBackendConfig();
+  const canPersistBackend = !dryRun && isConfigured && hasAdminToken;
   let contact: BotContactRecord | null = null;
 
-  if (canPersistDirectus) {
+  if (canPersistBackend) {
     try {
       contact = await upsertBotContactAsAdmin({
         bot_id: botId,
@@ -925,7 +925,7 @@ export async function executeBotFlow(params: {
   let cachedProducts: ProductRecord[] | null = previewProducts ?? null;
   async function loadProductsForBot(): Promise<ProductRecord[]> {
     if (cachedProducts) return cachedProducts;
-    if (canPersistDirectus) {
+    if (canPersistBackend) {
       try {
         cachedProducts = await listProductsAsAdmin(botId);
         return cachedProducts;
@@ -943,7 +943,7 @@ export async function executeBotFlow(params: {
       const found = previewSurveys.find((s) => s.id === surveyId);
       if (found) return found;
     }
-    if (canPersistDirectus) {
+    if (canPersistBackend) {
       return getSurveyAsAdmin(surveyId);
     }
     return null;
@@ -952,7 +952,7 @@ export async function executeBotFlow(params: {
   let cachedBookingServices: BookingServiceRecord[] | null = previewBookingServices ?? null;
   async function loadBookingServicesForBot(): Promise<BookingServiceRecord[]> {
     if (cachedBookingServices) return cachedBookingServices.filter((s) => s.is_active !== false);
-    if (canPersistDirectus) {
+    if (canPersistBackend) {
       try {
         cachedBookingServices = await listBookingServicesAsAdmin(botId);
         return cachedBookingServices;
@@ -972,7 +972,7 @@ export async function executeBotFlow(params: {
         ? previewBookingSchedules.filter((s) => s.service_id === serviceId && s.is_active !== false)
         : previewBookingSchedules.filter((s) => s.is_active !== false);
     }
-    if (canPersistDirectus) {
+    if (canPersistBackend) {
       try {
         return await listBookingSchedulesAsAdmin(botId, serviceId);
       } catch (err) {
@@ -988,7 +988,7 @@ export async function executeBotFlow(params: {
         ? previewAppointments.filter((a) => a.service_id === serviceId && a.status !== 'cancelled')
         : previewAppointments.filter((a) => a.status !== 'cancelled');
     }
-    if (canPersistDirectus) {
+    if (canPersistBackend) {
       try {
         return await listAppointmentsAsAdmin(botId, serviceId);
       } catch (err) {
@@ -1013,13 +1013,14 @@ export async function executeBotFlow(params: {
     delete session.context_data.__survey_answers;
     session.awaiting_field_key = null;
 
-    if (canPersistDirectus) {
+    if (canPersistBackend) {
       try {
         createdSurveyResponse = await createSurveyResponseAsAdmin({
           survey_id: surveyId,
           bot_id: botId,
           contact_id: contact?.id || null,
           bale_user_id: userId,
+          bale_chat_id: chatId,
           bale_user_name: userFullName,
           answers_json: answers,
           score: numericScore,
@@ -1040,7 +1041,7 @@ export async function executeBotFlow(params: {
       };
     }
 
-    const threshold = surveyNode.surveyConfig?.lowScoreThreshold ?? 2;
+    const threshold = surveyNode.surveyConfig?.lowScoreThreshold ?? 3;
     const lowNodeId = surveyNode.surveyConfig?.lowScoreNodeId;
     const shouldTakeLowBranch =
       numericScore !== null && Boolean(lowNodeId) && numericScore <= threshold;
@@ -1234,7 +1235,7 @@ export async function executeBotFlow(params: {
             const totalAmount = cart.reduce((s, item) => s + item.price * item.quantity, 0);
             const customerPhone = contact?.phone || session.context_data.phone || null;
 
-            if (canPersistDirectus) {
+            if (canPersistBackend) {
               try {
                 createdOrder = await createBotOrderAsAdmin({
                   bot_id: botId,
@@ -1293,7 +1294,7 @@ export async function executeBotFlow(params: {
 
         // Return early for catalog navigation unless checkout triggered nextNodeId
         if (!targetNode) {
-          session = await persistSession(session, { persistToDirectus: !dryRun });
+          session = await persistSession(session, { persistToBackend: !dryRun });
           if (!dryRun && botToken) {
             if (update.callback_query?.id) {
               await answerBaleCallbackQuery(botToken, update.callback_query.id, callbackAnswerText);
@@ -1385,7 +1386,7 @@ export async function executeBotFlow(params: {
         }
 
         if (!targetNode) {
-          session = await persistSession(session, { persistToDirectus: !dryRun });
+          session = await persistSession(session, { persistToBackend: !dryRun });
           if (!dryRun && botToken) {
             if (update.callback_query?.id) {
               await answerBaleCallbackQuery(botToken, update.callback_query.id, callbackAnswerText);
@@ -1484,7 +1485,7 @@ export async function executeBotFlow(params: {
           const service = services[svcIdx];
 
           if (service) {
-            const lockKey = `${botId}:${service.id}:${dayOffset}:${timeCode}`;
+            const lockKey = `${botId}:${service.id}`;
             const outcome = await withBookingSlotLock(lockKey, async () => {
               const [schedules, latestAppointments] = await Promise.all([
                 loadBookingSchedulesForService(service.id),
@@ -1526,7 +1527,7 @@ export async function executeBotFlow(params: {
               const customerPhone = contact?.phone || session.context_data.phone || null;
               let record: AppointmentRecord;
 
-              if (canPersistDirectus) {
+              if (canPersistBackend) {
                 record = await createAppointmentAsAdmin({
                   bot_id: botId,
                   service_id: service.id,
@@ -1612,7 +1613,7 @@ export async function executeBotFlow(params: {
         }
 
         if (!targetNode) {
-          session = await persistSession(session, { persistToDirectus: !dryRun });
+          session = await persistSession(session, { persistToBackend: !dryRun });
           if (!dryRun && botToken) {
             if (update.callback_query?.id) {
               await answerBaleCallbackQuery(botToken, update.callback_query.id, callbackAnswerText);
@@ -1637,7 +1638,7 @@ export async function executeBotFlow(params: {
       const [, action, apptId] = data.split(':');
       if (apptId) {
         const nextStatus = action === 'no' ? 'cancelled' : 'confirmed';
-        if (canPersistDirectus) {
+        if (canPersistBackend) {
           const existing = await getAppointmentAsAdmin(apptId);
           if (existing && existing.bot_id === botId) {
             await updateAppointmentAsAdmin(apptId, { status: nextStatus });
@@ -1655,7 +1656,7 @@ export async function executeBotFlow(params: {
         });
         callbackAnswerText = nextStatus === 'confirmed' ? 'حضور تایید شد' : 'نوبت لغو شد';
 
-        session = await persistSession(session, { persistToDirectus: !dryRun });
+        session = await persistSession(session, { persistToBackend: !dryRun });
         if (!dryRun && botToken) {
           if (update.callback_query?.id) {
             await answerBaleCallbackQuery(botToken, update.callback_query.id, callbackAnswerText);
@@ -1709,7 +1710,7 @@ export async function executeBotFlow(params: {
               contact,
             })
           );
-          session = await persistSession(session, { persistToDirectus: !dryRun });
+          session = await persistSession(session, { persistToBackend: !dryRun });
           if (!dryRun && botToken) {
             for (const payload of outgoingPayloads) {
               await dispatchBaleOutgoingPayload(botToken, payload);
@@ -1750,7 +1751,7 @@ export async function executeBotFlow(params: {
             text: errorMsg,
             reply_markup: buildQuestionMarkup(currentNode),
           });
-          session = await persistSession(session, { persistToDirectus: !dryRun });
+          session = await persistSession(session, { persistToBackend: !dryRun });
           if (!dryRun && botToken) {
             for (const payload of outgoingPayloads) {
               await dispatchBaleOutgoingPayload(botToken, payload);
@@ -1765,7 +1766,7 @@ export async function executeBotFlow(params: {
         }
 
         session.context_data[session.awaiting_field_key] = check.cleaned;
-        if (currentNode.inputType === 'phone' && canPersistDirectus) {
+        if (currentNode.inputType === 'phone' && canPersistBackend) {
           try {
             contact = await upsertBotContactAsAdmin({
               bot_id: botId,
@@ -1795,7 +1796,7 @@ export async function executeBotFlow(params: {
       chat_id: chatId,
       text: flow.fallbackText || 'برای شروع دستور /start را ارسال کنید.',
     });
-    session = await persistSession(session, { persistToDirectus: !dryRun });
+    session = await persistSession(session, { persistToBackend: !dryRun });
     if (!dryRun && botToken) {
       if (isCallback && update.callback_query?.id) {
         await answerBaleCallbackQuery(botToken, update.callback_query.id);
@@ -1847,7 +1848,7 @@ export async function executeBotFlow(params: {
       const nextTags = Array.from(currentTags);
       saveSessionTags(session, nextTags);
 
-      if (canPersistDirectus) {
+      if (canPersistBackend) {
         try {
           contact = await upsertBotContactAsAdmin({
             bot_id: botId,
@@ -1884,7 +1885,7 @@ export async function executeBotFlow(params: {
         }
       }
 
-      if (canPersistDirectus) {
+      if (canPersistBackend) {
         try {
           contact = await upsertBotContactAsAdmin({
             bot_id: botId,
@@ -1938,8 +1939,8 @@ export async function executeBotFlow(params: {
       const linked = await loadSurveyById(current.surveyConfig?.surveyId);
       const def = resolveSurveyDefinition(current, linked);
 
-      if (def.surveyId && !def.allowMultiple && canPersistDirectus) {
-        const alreadyAnswered = await hasContactAnsweredSurveyAsAdmin(botId, def.surveyId, userId);
+      if (def.surveyId && !def.allowMultiple && canPersistBackend) {
+        const alreadyAnswered = await hasContactAnsweredSurveyAsAdmin(botId, def.surveyId, chatId);
         if (alreadyAnswered) {
           outgoingPayloads.push({
             chat_id: chatId,
@@ -2075,7 +2076,7 @@ export async function executeBotFlow(params: {
 
     if (current.type === 'save_form') {
       savedFormPayload = buildPublicFormContext(session.context_data);
-      if (canPersistDirectus) {
+      if (canPersistBackend) {
         await createCollectedFormAsAdmin({
           bot_id: botId,
           flow_id: flowId || null,
@@ -2163,7 +2164,7 @@ export async function executeBotFlow(params: {
                   chatId,
                   userId,
                   userName: userFullName,
-                  persistToDirectus: true,
+                  persistToBackend: true,
                 });
                 const lastInteractionMs = Date.parse(latestSession.last_interaction_at || '');
                 if (!Number.isNaN(lastInteractionMs) && lastInteractionMs > scheduledAtMs) {
@@ -2204,10 +2205,10 @@ export async function executeBotFlow(params: {
     current = undefined;
   }
 
-  session = await persistSession(session, { persistToDirectus: !dryRun });
+  session = await persistSession(session, { persistToBackend: !dryRun });
 
   if (!dryRun && botToken) {
-    if (isCallback && update.callback_query?.id) {
+    if (!startAtNodeId && isCallback && update.callback_query?.id) {
       await answerBaleCallbackQuery(botToken, update.callback_query.id, callbackAnswerText);
     }
     for (const payload of outgoingPayloads) {

@@ -1,6 +1,6 @@
 import Redis from 'ioredis';
 import type { BotSessionRecord } from '../types/bot.ts';
-import { findSessionInDirectus, getDirectusConfig, saveSessionInDirectus } from './directus.ts';
+import { findSessionInBackend, getBackendConfig, saveSessionInBackend } from './backend.ts';
 
 const SESSION_TTL_SECONDS = 60 * 60 * 24; // 24 hours
 
@@ -32,7 +32,7 @@ export async function getOrInitSession(params: {
   chatId: string;
   userId: string;
   userName?: string | null;
-  persistToDirectus?: boolean;
+  persistToBackend?: boolean;
 }): Promise<BotSessionRecord> {
   const key = cacheKey(params.botId, params.chatId);
   const redis = getRedisClient();
@@ -57,11 +57,11 @@ export async function getOrInitSession(params: {
     }
   }
 
-  // Fallback to Directus persistent store if configured
-  const { isConfigured, hasAdminToken } = getDirectusConfig();
-  if (params.persistToDirectus !== false && isConfigured && hasAdminToken) {
+  // Fallback to backend persistent store if configured
+  const { isConfigured, hasAdminToken } = getBackendConfig();
+  if (params.persistToBackend !== false && isConfigured && hasAdminToken) {
     try {
-      const existing = await findSessionInDirectus(params.botId, params.chatId);
+      const existing = await findSessionInBackend(params.botId, params.chatId);
       if (existing) {
         const normalized: BotSessionRecord = {
           ...existing,
@@ -71,7 +71,7 @@ export async function getOrInitSession(params: {
         return normalized;
       }
     } catch (err) {
-      console.warn('Directus findSession fallback:', err);
+      console.warn('Backend findSession fallback:', err);
     }
   }
 
@@ -108,7 +108,7 @@ async function cacheSessionLocally(key: string, session: BotSessionRecord): Prom
 
 export async function persistSession(
   session: BotSessionRecord,
-  options: { persistToDirectus?: boolean } = {}
+  options: { persistToBackend?: boolean } = {}
 ): Promise<BotSessionRecord> {
   const updated: BotSessionRecord = {
     ...session,
@@ -116,13 +116,13 @@ export async function persistSession(
   };
   const key = cacheKey(updated.bot_id, updated.bale_chat_id);
 
-  const { isConfigured, hasAdminToken } = getDirectusConfig();
-  if (options.persistToDirectus !== false && isConfigured && hasAdminToken) {
+  const { isConfigured, hasAdminToken } = getBackendConfig();
+  if (options.persistToBackend !== false && isConfigured && hasAdminToken) {
     try {
-      const saved = await saveSessionInDirectus(updated);
+      const saved = await saveSessionInBackend(updated);
       updated.id = saved.id;
     } catch (err) {
-      console.error('Failed to persist session to Directus:', err);
+      console.error('Failed to persist session to backend:', err);
     }
   }
 

@@ -73,7 +73,7 @@ export function BotsOverviewView({
       onSelectBot(created.bot.id);
       setFeedback({
         type: 'success',
-        text: `بازوی «${created.bot.name}» با موفقیت در دایرکتوس ثبت و جریان پیش‌فرض برای آن ایجاد شد.`,
+        text: `بازوی «${created.bot.name}» با موفقیت ثبت و جریان پیش‌فرض برای آن ایجاد شد.`,
       });
     } catch (err) {
       setFeedback({
@@ -213,7 +213,7 @@ export function BotsOverviewView({
 
       {!token && (
         <div className="bg-white border border-slate-200 rounded-xl p-6 text-sm text-slate-600 leading-7">
-          شما در حالت پیش‌نمایش بدون ورود به حساب دایرکتوس هستید. برای ثبت واقعی بازو و اتصال وب‌هوک به پیام‌رسان بله، متغیرهای محیطی دایرکتوس را تنظیم کرده و وارد حساب خود شوید. هم‌اکنون می‌توانید از تب «طراح جریان گفتگو» و «راهنمای دیتابیس دایرکتوس» به صورت کامل استفاده کنید.
+          شما در حالت پیش‌نمایش هستید. برای ثبت واقعی بازو و اتصال وب‌هوک به پیام‌رسان بله، وارد حساب کاربری خود شوید. هم‌اکنون می‌توانید از تب «طراح جریان گفتگو» برای طراحی و تست جریان استفاده کنید.
         </div>
       )}
 
@@ -280,7 +280,7 @@ export function BotsOverviewView({
               disabled={submitting}
               className="px-5 py-2 text-xs font-medium text-white bg-emerald-700 hover:bg-emerald-800 disabled:opacity-60 rounded-lg transition-colors cursor-pointer"
             >
-              {submitting ? 'در حال ثبت در دایرکتوس...' : 'ثبت بازو و ساخت جریان اولیه'}
+              {submitting ? 'در حال ثبت...' : 'ثبت بازو و ساخت جریان اولیه'}
             </button>
           </div>
         </form>

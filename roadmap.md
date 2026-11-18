@@ -1,12 +1,12 @@
 # نقشه راه توسعه پلتفرم بله‌ساز (Roadmap)
 
-این سند نقشه راه فازبه‌فاز برای توسعه کامل قابلیت‌های تجاری، CRM و اتوماسیون بازوی پیام‌رسان بله روی بکند **Directus** و سرور **Express** است.
+این سند نقشه راه فازبه‌فاز برای توسعه کامل قابلیت‌های تجاری، CRM و اتوماسیون بازوی پیام‌رسان بله روی بکند ابری و سرور **Express** است.
 
 ---
 
 ## فاز ۰: هسته اولیه MVP (تکمیل‌شده)
 
-- [x] احراز هویت و چندمستاجری با Directus JWT (`/auth/login`, `/auth/register`, `/users/me`)
+- [x] احراز هویت و چندمستاجری با توکن JWT (`/auth/login`, `/auth/register`, `/users/me`)
 - [x] مدیریت بازوها، اعتبارسنجی توکن (`getMe`) و ثبت/حذف وب‌هوک بله (`setWebhook`)
 - [x] صف ناهمگام وب‌هوک (`POST /api/webhooks/bale/:secret`) با پردازش پس‌زمینه بدون تایم‌اوت
 - [x] موتور اجرای جریان فارسی (`trigger`, `message`, `question`, `condition`, `save_form`) + شبیه‌ساز زنده
@@ -19,7 +19,7 @@
 
 **هدف:** تبدیل کاربران گذرای ربات به مخاطبین ساختاریافته با برچسب، شماره تماس تاییدشده و تاریخچه تعامل.
 
-### ۱.۱. کالکشن جدید در Directus
+### ۱.۱. کالکشن جدید در پایگاه داده
 - **`bot_contacts`**
   - `id` (`UUID`, Primary Key)
   - `bot_id` (`M2O → bots`, On Delete: `Cascade`, Required)
@@ -65,12 +65,12 @@
 
 **هدف:** امکان معرفی محصولات، ثبت سفارش داخل بله و سنجش رضایت مشتریان.
 
-### ۳.۱. کالکشن‌های جدید در Directus
+### ۳.۱. کالکشن‌های جدید در پایگاه داده
 - **`products`**
   - `id` (`UUID`), `bot_id` (`M2O → bots`)
   - `title` (`String`), `description` (`Text`), `category` (`String`)
   - `price` (`Integer` / `BigInteger`), `stock` (`Integer`)
-  - `image_url` (`String` یا فایل Directus), `is_active` (`Boolean`)
+  - `image_url` (`String` یا آدرس تصویر), `is_active` (`Boolean`)
 - **`bot_orders`**
   - `id` (`UUID`), `bot_id` (`M2O → bots`), `contact_id` (`M2O → bot_contacts`)
   - `bale_chat_id` (`String`), `bale_user_name` (`String`)
@@ -91,7 +91,7 @@
 
 **هدف:** اتوماسیون زمان‌بندی نوبت‌ها با یادآور خودکار و اجرای کمپین‌های پیام‌رسانی انبوه ایمن.
 
-### ۴.۱. کالکشن‌های جدید در Directus
+### ۴.۱. کالکشن‌های جدید در پایگاه داده
 - **`booking_services`**
   - `id`, `bot_id`, `title`, `description`, `duration_minutes` (`Integer`), `capacity_per_slot` (`Integer`), `price`, `is_active`
 - **`booking_schedules`**

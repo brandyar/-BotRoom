@@ -121,7 +121,7 @@ export interface FlowNode {
   surveyConfig?: SurveyNodeConfig;
   /** Booking / appointment configuration for 'booking_node' nodes */
   bookingConfig?: BookingNodeConfig;
-  /** Form title used when saving to Directus collected_form_data */
+  /** Form title used when saving to collected_form_data */
   formTitle?: string;
   /** Optional layout coordinates for visual editor */
   position?: { x: number; y: number };
@@ -141,7 +141,7 @@ export interface ScheduledFollowUpItem {
   cancelIfReplied?: boolean;
 }
 
-export interface DirectusUser {
+export interface AuthUser {
   id: string;
   email: string;
   first_name?: string | null;
@@ -218,6 +218,7 @@ export interface BotOrderRecord {
   contact_id?: string | number | null;
   bale_user_id?: string | null;
   bale_chat_id?: string | null;
+  bale_user_name?: string | null;
   customer_name?: string | null;
   customer_phone?: string | null;
   items: OrderCartItem[];

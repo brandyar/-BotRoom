@@ -151,7 +151,7 @@ export function getJalaliPartsTehran(date: Date): {
       day: '2-digit',
       hour: '2-digit',
       minute: '2-digit',
-      hour12: false,
+      hourCycle: 'h23',
     }).formatToParts(date);
 
     yearAscii = (numericParts.find((p) => p.type === 'year')?.value || '').replace(/\D/g, '');
@@ -164,7 +164,7 @@ export function getJalaliPartsTehran(date: Date): {
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
-      hour12: false,
+      hourCycle: 'h23',
     }).formatToParts(date);
 
     monthName = persianParts.find((p) => p.type === 'month')?.value || '';

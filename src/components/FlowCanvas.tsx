@@ -401,7 +401,7 @@ export function FlowCanvas({
             kind: { type: 'survey_low', sourceNodeId: node.id },
             sourceNodeId: node.id,
             targetNodeId: node.surveyConfig.lowScoreNodeId,
-            label: `امتیاز ≤ ${toPersianDigits(node.surveyConfig.lowScoreThreshold ?? 2)}`,
+            label: `امتیاز ≤ ${toPersianDigits(node.surveyConfig.lowScoreThreshold ?? 3)}`,
             color: '#d97706',
             sourceX: leftEdgeX,
             sourceY: srcPos.y + srcH * 0.72,
